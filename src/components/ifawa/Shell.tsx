@@ -51,11 +51,15 @@ export function Shell({
   const { profil, notifications } = useApp();
   const nonLues = notifications.filter((n) => n.nonLue).length;
   const [connected, setConnected] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     let alive = true;
     getCurrentUser().then((user) => {
-      if (alive) setConnected(Boolean(user));
+      if (!alive) return;
+      setConnected(Boolean(user));
+      setAuthChecked(true);
+      if (!user) navigate({ to: "/connexion" });
       if (alive && user) {
         loadCurrentProfile().then((profile) => {
           if (profile) actions.majProfil(profile);
@@ -64,6 +68,8 @@ export function Shell({
     });
     const unsubscribe = onAuthUserChange((user) => {
       setConnected(Boolean(user));
+      setAuthChecked(true);
+      if (!user) navigate({ to: "/connexion" });
       if (user) {
         loadCurrentProfile().then((profile) => {
           if (profile) actions.majProfil(profile);
@@ -74,7 +80,7 @@ export function Shell({
       alive = false;
       unsubscribe();
     };
-  }, []);
+  }, [navigate]);
 
   async function disconnect() {
     await signOut();
@@ -135,6 +141,17 @@ export function Shell({
         </div>
       </header>
 
+      {!authChecked || !connected ? (
+        <main className="mx-auto grid min-h-[calc(100vh-3.5rem)] max-w-2xl place-items-center px-5 text-center">
+          <div>
+            <p className="label-mono mb-3 text-clay">Connexion requise</p>
+            <h1 className="font-display text-[34px] uppercase leading-none">Accès réservé</h1>
+            <p className="mt-3 text-[14px] leading-relaxed text-umber-soft">
+              Connectez-vous pour accéder à votre espace Ifawa.
+            </p>
+          </div>
+        </main>
+      ) : (
       <div className="mx-auto flex max-w-6xl gap-6 px-4 pb-28 pt-6 lg:pb-10">
         <aside className="hidden w-52 shrink-0 lg:block">
           <nav className="sticky top-20 space-y-0.5">
@@ -154,8 +171,9 @@ export function Shell({
           <div className="sticky top-20 space-y-4">{right ?? <DefaultRail />}</div>
         </aside>
       </div>
+      )}
 
-      <BottomNav pathname={pathname} />
+      {authChecked && connected && <BottomNav pathname={pathname} />}
     </div>
   );
 }

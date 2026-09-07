@@ -132,12 +132,6 @@ function Bienvenue() {
                 <li>Des services : consultation, initiation, étude, accompagnement.</li>
                 <li>Un dossier Fa personnel et un carnet de parcours.</li>
               </ul>
-              <Link
-                to="/accueil"
-                className="mt-6 inline-block font-mono text-[10px] uppercase tracking-[0.2em] text-clay"
-              >
-                Explorer la plateforme →
-              </Link>
             </div>
           </div>
         </section>
@@ -148,7 +142,7 @@ function Bienvenue() {
               <p className="label-mono mb-2 text-brass">Application mobile</p>
               <h2 className="font-display text-[28px] uppercase leading-none">Installer Ifawa</h2>
               <p className="mt-2 max-w-[46ch] text-[13px] leading-relaxed text-ivory/70">
-                Ajoutez Ifawa à l'écran d'accueil de votre téléphone pour y accéder plus vite.
+                Installez Ifawa sur votre téléphone et accédez à votre espace comme une application.
               </p>
             </div>
             <button
