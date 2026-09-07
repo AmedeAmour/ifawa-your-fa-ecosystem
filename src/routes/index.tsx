@@ -1,6 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Logo } from "@/components/ifawa/primitives";
 import cover from "@/assets/cover.jpg";
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -23,6 +29,39 @@ export const Route = createFileRoute("/")({
 });
 
 function Bienvenue() {
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+
+    const onPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  async function installApp() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === "accepted") setInstalled(true);
+    setInstallPrompt(null);
+  }
+
   return (
     <div className="min-h-screen bg-ivory text-umber">
       <header className="border-b border-umber/10">
@@ -66,6 +105,14 @@ function Bienvenue() {
               tone="ink"
             />
           </div>
+          <div className="mt-5 flex justify-center">
+            <Link
+              to="/connexion"
+              className="font-mono text-[10px] uppercase tracking-[0.18em] text-clay transition-colors hover:text-umber"
+            >
+              J'ai déjà un compte →
+            </Link>
+          </div>
         </section>
 
         <section className="mt-14 border-t border-umber/10 pt-8">
@@ -92,6 +139,26 @@ function Bienvenue() {
                 Explorer la plateforme →
               </Link>
             </div>
+          </div>
+        </section>
+
+        <section className="mt-8 bg-umber p-5 text-ivory">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="label-mono mb-2 text-brass">Application mobile</p>
+              <h2 className="font-display text-[28px] uppercase leading-none">Installer Ifawa</h2>
+              <p className="mt-2 max-w-[46ch] text-[13px] leading-relaxed text-ivory/70">
+                Ajoutez Ifawa à l'écran d'accueil de votre téléphone pour y accéder plus vite.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={installApp}
+              disabled={!installPrompt || installed}
+              className="bg-clay px-4 py-3 font-mono text-[10px] uppercase tracking-[0.18em] text-ivory transition-colors hover:bg-clay/90 disabled:bg-ivory/10 disabled:text-ivory/45"
+            >
+              {installed ? "Installée" : installPrompt ? "Installer" : "Disponible depuis le navigateur"}
+            </button>
           </div>
         </section>
       </main>

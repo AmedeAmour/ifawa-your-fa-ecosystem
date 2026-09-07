@@ -319,9 +319,6 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
   return (
     <Shell>
       <PageTitle kicker={copy.kicker} action={<Btn to="/services" variant="ghost">Services</Btn>}>{copy.title}</PageTitle>
-      <Panel tone="deep" className="mb-5">
-        <p className="max-w-2xl text-[14px] leading-relaxed text-umber-soft">{copy.intro}</p>
-      </Panel>
       <div className="grid gap-4 md:grid-cols-3">
         {formules.map((formule) => (
           <Panel key={formule.nom} tone={formule.recommande ? "forest" : "paper"}>
