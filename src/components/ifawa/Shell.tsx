@@ -1,5 +1,5 @@
-import { Link, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Home,
   Library,
@@ -7,17 +7,20 @@ import {
   MessageSquare,
   User,
   Bell,
+  Briefcase,
   Search,
-  Sparkles,
   FolderOpen,
   Route as RouteIcon,
   Shield,
   Settings,
+  LogIn,
+  LogOut,
 } from "lucide-react";
 import { Logo, Monogram, Panel, Kicker } from "./primitives";
-import { useApp } from "@/lib/store";
-import { membres, notifications } from "@/data/mock";
+import { actions, useApp } from "@/lib/store";
+import { membres } from "@/data/mock";
 import { cn } from "@/lib/utils";
+import { getCurrentUser, loadCurrentProfile, onAuthUserChange, signOut } from "@/lib/ifawa-auth";
 
 const mainNav = [
   { to: "/accueil", label: "Accueil", icon: Home },
@@ -28,7 +31,7 @@ const mainNav = [
 ] as const;
 
 const sideExtra = [
-  { to: "/services", label: "Services", icon: Sparkles },
+  { to: "/services", label: "Services", icon: Briefcase },
   { to: "/dossier", label: "Mon dossier Fa", icon: FolderOpen },
   { to: "/carnet", label: "Carnet de parcours", icon: RouteIcon },
   { to: "/notifications", label: "Notifications", icon: Bell },
@@ -44,8 +47,40 @@ export function Shell({
   right?: ReactNode;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { profil } = useApp();
+  const navigate = useNavigate();
+  const { profil, notifications } = useApp();
   const nonLues = notifications.filter((n) => n.nonLue).length;
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getCurrentUser().then((user) => {
+      if (alive) setConnected(Boolean(user));
+      if (alive && user) {
+        loadCurrentProfile().then((profile) => {
+          if (profile) actions.majProfil(profile);
+        });
+      }
+    });
+    const unsubscribe = onAuthUserChange((user) => {
+      setConnected(Boolean(user));
+      if (user) {
+        loadCurrentProfile().then((profile) => {
+          if (profile) actions.majProfil(profile);
+        });
+      }
+    });
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, []);
+
+  async function disconnect() {
+    await signOut();
+    setConnected(false);
+    navigate({ to: "/connexion" });
+  }
 
   return (
     <div className="min-h-screen bg-ivory text-umber">
@@ -73,9 +108,29 @@ export function Shell({
                 </span>
               )}
             </Link>
-            <Link to="/profil" className="ml-1">
-              <Monogram name={profil.pseudo} size={30} />
-            </Link>
+            {connected ? (
+              <>
+                <Link to="/profil" className="ml-1">
+                  <Monogram name={profil.pseudo} imageUrl={profil.avatarUrl} size={40} tone="umber" />
+                </Link>
+                <button
+                  type="button"
+                  onClick={disconnect}
+                  className="grid size-9 place-items-center text-umber-soft transition-colors hover:text-clay"
+                  aria-label="Se déconnecter"
+                >
+                  <LogOut className="size-4.5" />
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/connexion"
+                className="inline-flex items-center gap-2 px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-umber-soft transition-colors hover:text-clay sm:px-3"
+              >
+                <LogIn className="size-4" />
+                <span className="hidden sm:inline">Connexion</span>
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -213,7 +268,7 @@ function BottomNav({ pathname }: { pathname: string }) {
         className="absolute -top-12 right-4 grid size-11 place-items-center rounded-full bg-clay text-ivory shadow-lg"
         aria-label="Services Ifawa"
       >
-        <Sparkles className="size-5" />
+        <Briefcase className="size-5" />
       </Link>
     </nav>
   );

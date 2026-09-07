@@ -28,7 +28,7 @@ function Bienvenue() {
       <header className="border-b border-umber/10">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-5">
           <Logo />
-          <span className="label-mono text-umber-soft">Prototype</span>
+          <span className="label-mono text-umber-soft">Plateforme</span>
         </div>
       </header>
 
@@ -89,7 +89,7 @@ function Bienvenue() {
                 to="/accueil"
                 className="mt-6 inline-block font-mono text-[10px] uppercase tracking-[0.2em] text-clay"
               >
-                Entrer directement dans la démo →
+                Explorer la plateforme →
               </Link>
             </div>
           </div>
@@ -98,7 +98,7 @@ function Bienvenue() {
 
       <footer className="border-t border-umber/10 py-6">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-5 text-[12px] text-umber-soft">
-          <span>Prototype UI/UX — contenu de démonstration, non authentifié.</span>
+          <span>Plateforme Ifawa — connaissance, communauté et accompagnement.</span>
           <span className="font-display uppercase tracking-tight">Ifawa</span>
         </div>
       </footer>

@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Image as ImageIcon, Compass } from "lucide-react";
 import { Shell } from "@/components/ifawa/Shell";
 import { PostCard } from "@/components/ifawa/PostCard";
-import { Btn, Kicker, Monogram, Panel, SectionTitle, DemoTag } from "@/components/ifawa/primitives";
+import { Btn, Kicker, Monogram, Panel, SectionTitle } from "@/components/ifawa/primitives";
 import { actions, useApp } from "@/lib/store";
 import { decouverte } from "@/data/mock";
 import { cn } from "@/lib/utils";
@@ -23,9 +23,12 @@ export const Route = createFileRoute("/accueil")({
 function Accueil() {
   const { posts, profil } = useApp();
   const [texte, setTexte] = useState("");
-  const [image, setImage] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
   const [filtre, setFiltre] = useState("Tout");
+  const [type, setType] = useState<"Témoignage" | "Question" | "Contribution">("Témoignage");
+  const fileRef = useRef<HTMLInputElement>(null);
   const filtres = ["Tout", "Membres", "Officiel", "Témoignages"];
+  const types = ["Témoignage", "Question", "Contribution"] as const;
 
   const visibles = posts.filter((p) =>
     filtre === "Tout"
@@ -43,7 +46,7 @@ function Accueil() {
 
       <Panel tone="deep" className="mb-5 animate-rise">
         <div className="flex items-start gap-3">
-          <Monogram name={profil.pseudo} size={40} />
+          <Monogram name={profil.pseudo} imageUrl={profil.avatarUrl} size={40} />
           <div className="flex-1">
             <textarea
               value={texte}
@@ -52,21 +55,60 @@ function Accueil() {
               rows={2}
               className="w-full resize-none border-0 bg-transparent text-[15px] outline-none placeholder:text-umber-soft"
             />
+            <div className="mt-3">
+              <div className="grid grid-cols-3 gap-2">
+                {types.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setType(item)}
+                    className={cn(
+                      "min-w-0 whitespace-nowrap px-2 py-1.5 text-center font-mono text-[8.5px] uppercase tracking-[0.08em] transition-colors sm:text-[9px] sm:tracking-[0.14em]",
+                      type === item ? "bg-umber text-ivory" : "bg-card carved text-umber-soft",
+                    )}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="mt-3 flex items-center gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => setImageUrl(String(reader.result));
+                  reader.readAsDataURL(file);
+                }}
+              />
               <button
-                onClick={() => setImage((i) => !i)}
+                onClick={() => fileRef.current?.click()}
                 className={cn(
                   "inline-flex items-center gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
-                  image ? "bg-forest text-ivory" : "bg-card carved text-umber-soft",
+                  imageUrl ? "bg-forest text-ivory" : "bg-card carved text-umber-soft",
                 )}
               >
                 <ImageIcon className="size-3.5" /> Photo
               </button>
+              {imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setImageUrl("")}
+                  className="font-mono text-[10px] uppercase tracking-[0.16em] text-umber-soft hover:text-clay"
+                >
+                  Retirer
+                </button>
+              )}
               <Btn
                 onClick={() => {
-                  actions.publier(texte, image);
+                  actions.publier(texte, imageUrl, type);
                   setTexte("");
-                  setImage(false);
+                  setImageUrl("");
                 }}
                 disabled={!texte.trim()}
                 className="ml-auto"
@@ -74,6 +116,7 @@ function Accueil() {
                 Publier
               </Btn>
             </div>
+            {imageUrl && <img src={imageUrl} alt="" className="mt-3 aspect-[16/10] w-full object-cover" />}
           </div>
         </div>
       </Panel>
@@ -97,9 +140,6 @@ function Accueil() {
         <PostCard key={p.id} post={p} index={i} />
       ))}
 
-      <p className="py-6 text-center">
-        <DemoTag />
-      </p>
     </Shell>
   );
 }

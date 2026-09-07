@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Search } from "lucide-react";
 import { Shell } from "@/components/ifawa/Shell";
-import { PageTitle, Panel, DemoTag, inputCls, Btn } from "@/components/ifawa/primitives";
+import { PageTitle, Panel, Btn } from "@/components/ifawa/primitives";
 import { signes } from "@/data/mock";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +12,7 @@ export const Route = createFileRoute("/fa/")({
       { title: "Bibliothèque du Fa — les 16 signes-mères | IFAWA" },
       { name: "description", content: "Parcourez les seize signes-mères du Fa : fiches structurées, enseignements, variantes et contributions validées." },
       { property: "og:title", content: "Bibliothèque du Fa — les 16 signes-mères" },
-      { property: "og:description", content: "Seize fiches de démonstration, contributions de la communauté Ifawa." },
+      { property: "og:description", content: "Seize fiches structurées, contributions de la communauté Ifawa." },
     ],
   }),
   component: Bibliotheque,
@@ -67,7 +67,6 @@ function Bibliotheque() {
       )}
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <DemoTag />
         <Btn to="/contribuer" variant="outline">Proposer une contribution</Btn>
       </div>
     </Shell>

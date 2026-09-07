@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Logo, Btn, Field, inputCls, Monogram, Chip } from "@/components/ifawa/primitives";
 import { actions } from "@/lib/store";
+import { signUpWithOnboarding } from "@/lib/ifawa-auth";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/onboarding/decouverte")({
@@ -30,19 +31,42 @@ function OnboardingDecouverte() {
   const navigate = useNavigate();
   const [etape, setEtape] = useState(0);
   const [pseudo, setPseudo] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [choisis, setChoisis] = useState<string[]>([]);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [confirmation, setConfirmation] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const toggle = (i: string) =>
     setChoisis((c) => (c.includes(i) ? c.filter((x) => x !== i) : [...c, i]));
 
-  const suivant = () => {
-    if (etape < 3) return setEtape(etape + 1);
-    actions.majProfil({
-      pseudo: pseudo.trim() ? (pseudo.startsWith("@") ? pseudo : `@${pseudo}`) : "@Vous",
-      initie: false,
-      interets: choisis,
-    });
-    navigate({ to: "/accueil" });
+  const draft = {
+    pseudo: pseudo.trim() ? (pseudo.startsWith("@") ? pseudo : `@${pseudo}`) : "@Vous",
+    avatarUrl,
+    initie: false,
+    interets: choisis,
+    miseEnRelation: false,
+  };
+
+  const suivant = async () => {
+    if (etape < 4) return setEtape(etape + 1);
+    setError("");
+    setLoading(true);
+    try {
+      const result = await signUpWithOnboarding(email, password, draft);
+      actions.majProfil(draft);
+      if (result.status === "signed-in") {
+        navigate({ to: "/accueil" });
+      } else {
+        setConfirmation(true);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Inscription impossible pour le moment.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -50,11 +74,11 @@ function OnboardingDecouverte() {
       <header className="border-b border-umber/10">
         <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-5">
           <Logo />
-          <span className="label-mono text-umber-soft">Étape {Math.min(etape + 1, 3)} / 3</span>
+          <span className="label-mono text-umber-soft">Étape {Math.min(etape + 1, 5)} / 5</span>
         </div>
       </header>
       <div className="h-0.5 bg-ivory-deep">
-        <div className="h-0.5 bg-clay transition-all duration-500" style={{ width: `${((etape + 1) / 4) * 100}%` }} />
+        <div className="h-0.5 bg-clay transition-all duration-500" style={{ width: `${((etape + 1) / 5) * 100}%` }} />
       </div>
 
       <main className="mx-auto max-w-2xl animate-rise px-5 pb-24 pt-10">
@@ -79,8 +103,19 @@ function OnboardingDecouverte() {
             </h1>
             <p className="mb-7 mt-3 text-[14px] leading-relaxed text-umber-soft">Facultatif — vous pouvez le faire plus tard.</p>
             <div className="flex items-center gap-4">
-              <Monogram name={pseudo || "Vous"} size={72} />
-              <Btn variant="outline">Choisir une image</Btn>
+              <Monogram name={pseudo || "Vous"} imageUrl={avatarUrl} size={72} />
+              <input
+                className={inputCls}
+                type="file"
+                accept="image/*"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => setAvatarUrl(String(reader.result));
+                  reader.readAsDataURL(file);
+                }}
+              />
             </div>
           </>
         )}
@@ -114,6 +149,36 @@ function OnboardingDecouverte() {
           </div>
         )}
 
+        {etape === 4 && (
+          <div className="animate-rise">
+            <h1 className="font-display text-[32px] uppercase leading-[0.95] tracking-tight sm:text-[40px]">
+              Créez votre compte
+            </h1>
+            <p className="mb-7 mt-3 text-[14px] leading-relaxed text-umber-soft">
+              Votre parcours est prêt. Indiquez seulement votre adresse email et un mot de passe.
+            </p>
+            {confirmation ? (
+              <div className="bg-forest p-5 text-ivory">
+                <p className="font-display text-[26px] uppercase leading-none">Compte créé</p>
+                <p className="mt-3 text-[14px] leading-relaxed text-ivory/75">
+                  Vérifiez votre email, puis connectez-vous pour accéder à votre espace Ifawa.
+                </p>
+                <Btn to="/connexion" className="mt-5" variant="outline">Se connecter</Btn>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <Field label="Adresse email">
+                  <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" />
+                </Field>
+                <Field label="Mot de passe">
+                  <input className={inputCls} value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="new-password" />
+                </Field>
+                {error && <p className="bg-clay/10 px-3 py-2 text-[13px] text-clay">{error}</p>}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="mt-10 flex items-center justify-between">
           <button
             onClick={() => (etape === 0 ? history.back() : setEtape(etape - 1))}
@@ -121,9 +186,11 @@ function OnboardingDecouverte() {
           >
             <ChevronLeft className="size-3.5" /> Retour
           </button>
-          <Btn onClick={suivant} className={cn(etape === 3 && "px-8")}>
-            {etape === 3 ? "Accéder à Ifawa" : "Continuer"}
-          </Btn>
+          {!confirmation && (
+            <Btn onClick={suivant} disabled={etape === 4 && (loading || !email.trim() || password.length < 6)} className={cn(etape === 4 && "px-8")}>
+              {etape === 4 ? (loading ? "Création..." : "Créer mon compte") : "Continuer"}
+            </Btn>
+          )}
         </div>
       </main>
     </div>

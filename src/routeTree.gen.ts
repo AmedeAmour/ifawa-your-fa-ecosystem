@@ -10,14 +10,36 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccompagnementRouteImport } from './routes/accompagnement'
 import { Route as AccueilRouteImport } from './routes/accueil'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as CarnetRouteImport } from './routes/carnet'
+import { Route as ConnexionRouteImport } from './routes/connexion'
+import { Route as ContribuerRouteImport } from './routes/contribuer'
+import { Route as DossierRouteImport } from './routes/dossier'
+import { Route as MessagesRouteImport } from './routes/messages'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as ParametresRouteImport } from './routes/parametres'
+import { Route as ProfilRouteImport } from './routes/profil'
+import { Route as RapportRouteImport } from './routes/rapport'
+import { Route as RechercheRouteImport } from './routes/recherche'
+import { Route as ReseauRouteImport } from './routes/reseau'
+import { Route as SuiviRouteImport } from './routes/suivi'
 import { Route as FaIndexRouteImport } from './routes/fa.index'
+import { Route as FaSlugRouteImport } from './routes/fa.$slug'
 import { Route as OnboardingDecouverteRouteImport } from './routes/onboarding.decouverte'
 import { Route as OnboardingInitieRouteImport } from './routes/onboarding.initie'
+import { Route as ServicesIndexRouteImport } from './routes/services.index'
+import { Route as ServicesSlugRouteImport } from './routes/services.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccompagnementRoute = AccompagnementRouteImport.update({
+  id: '/accompagnement',
+  path: '/accompagnement',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccueilRoute = AccueilRouteImport.update({
@@ -25,9 +47,79 @@ const AccueilRoute = AccueilRouteImport.update({
   path: '/accueil',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CarnetRoute = CarnetRouteImport.update({
+  id: '/carnet',
+  path: '/carnet',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConnexionRoute = ConnexionRouteImport.update({
+  id: '/connexion',
+  path: '/connexion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContribuerRoute = ContribuerRouteImport.update({
+  id: '/contribuer',
+  path: '/contribuer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DossierRoute = DossierRouteImport.update({
+  id: '/dossier',
+  path: '/dossier',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ParametresRoute = ParametresRouteImport.update({
+  id: '/parametres',
+  path: '/parametres',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfilRoute = ProfilRouteImport.update({
+  id: '/profil',
+  path: '/profil',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RapportRoute = RapportRouteImport.update({
+  id: '/rapport',
+  path: '/rapport',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RechercheRoute = RechercheRouteImport.update({
+  id: '/recherche',
+  path: '/recherche',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReseauRoute = ReseauRouteImport.update({
+  id: '/reseau',
+  path: '/reseau',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SuiviRoute = SuiviRouteImport.update({
+  id: '/suivi',
+  path: '/suivi',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FaIndexRoute = FaIndexRouteImport.update({
   id: '/fa/',
   path: '/fa/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaSlugRoute = FaSlugRouteImport.update({
+  id: '/fa/$slug',
+  path: '/fa/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OnboardingDecouverteRoute = OnboardingDecouverteRouteImport.update({
@@ -40,50 +132,188 @@ const OnboardingInitieRoute = OnboardingInitieRouteImport.update({
   path: '/onboarding/initie',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ServicesIndexRoute = ServicesIndexRouteImport.update({
+  id: '/services/',
+  path: '/services/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServicesSlugRoute = ServicesSlugRouteImport.update({
+  id: '/services/$slug',
+  path: '/services/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/accompagnement': typeof AccompagnementRoute
   '/accueil': typeof AccueilRoute
+  '/admin': typeof AdminRoute
+  '/carnet': typeof CarnetRoute
+  '/connexion': typeof ConnexionRoute
+  '/contribuer': typeof ContribuerRoute
+  '/dossier': typeof DossierRoute
+  '/messages': typeof MessagesRoute
+  '/notifications': typeof NotificationsRoute
+  '/parametres': typeof ParametresRoute
+  '/profil': typeof ProfilRoute
+  '/rapport': typeof RapportRoute
+  '/recherche': typeof RechercheRoute
+  '/reseau': typeof ReseauRoute
+  '/suivi': typeof SuiviRoute
+  '/fa/$slug': typeof FaSlugRoute
   '/onboarding/decouverte': typeof OnboardingDecouverteRoute
   '/onboarding/initie': typeof OnboardingInitieRoute
+  '/services/$slug': typeof ServicesSlugRoute
   '/fa/': typeof FaIndexRoute
+  '/services/': typeof ServicesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/accompagnement': typeof AccompagnementRoute
   '/accueil': typeof AccueilRoute
+  '/admin': typeof AdminRoute
+  '/carnet': typeof CarnetRoute
+  '/connexion': typeof ConnexionRoute
+  '/contribuer': typeof ContribuerRoute
+  '/dossier': typeof DossierRoute
+  '/messages': typeof MessagesRoute
+  '/notifications': typeof NotificationsRoute
+  '/parametres': typeof ParametresRoute
+  '/profil': typeof ProfilRoute
+  '/rapport': typeof RapportRoute
+  '/recherche': typeof RechercheRoute
+  '/reseau': typeof ReseauRoute
+  '/suivi': typeof SuiviRoute
+  '/fa/$slug': typeof FaSlugRoute
   '/onboarding/decouverte': typeof OnboardingDecouverteRoute
   '/onboarding/initie': typeof OnboardingInitieRoute
+  '/services/$slug': typeof ServicesSlugRoute
   '/fa': typeof FaIndexRoute
+  '/services': typeof ServicesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/accompagnement': typeof AccompagnementRoute
   '/accueil': typeof AccueilRoute
+  '/admin': typeof AdminRoute
+  '/carnet': typeof CarnetRoute
+  '/connexion': typeof ConnexionRoute
+  '/contribuer': typeof ContribuerRoute
+  '/dossier': typeof DossierRoute
+  '/messages': typeof MessagesRoute
+  '/notifications': typeof NotificationsRoute
+  '/parametres': typeof ParametresRoute
+  '/profil': typeof ProfilRoute
+  '/rapport': typeof RapportRoute
+  '/recherche': typeof RechercheRoute
+  '/reseau': typeof ReseauRoute
+  '/suivi': typeof SuiviRoute
+  '/fa/$slug': typeof FaSlugRoute
   '/onboarding/decouverte': typeof OnboardingDecouverteRoute
   '/onboarding/initie': typeof OnboardingInitieRoute
+  '/services/$slug': typeof ServicesSlugRoute
   '/fa/': typeof FaIndexRoute
+  '/services/': typeof ServicesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/accueil' | '/onboarding/decouverte' | '/onboarding/initie' | '/fa/'
+    | '/'
+    | '/accompagnement'
+    | '/accueil'
+    | '/admin'
+    | '/carnet'
+    | '/connexion'
+    | '/contribuer'
+    | '/dossier'
+    | '/messages'
+    | '/notifications'
+    | '/parametres'
+    | '/profil'
+    | '/rapport'
+    | '/recherche'
+    | '/reseau'
+    | '/suivi'
+    | '/fa/$slug'
+    | '/onboarding/decouverte'
+    | '/onboarding/initie'
+    | '/services/$slug'
+    | '/fa/'
+    | '/services/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/accueil' | '/onboarding/decouverte' | '/onboarding/initie' | '/fa'
+  to:
+    | '/'
+    | '/accompagnement'
+    | '/accueil'
+    | '/admin'
+    | '/carnet'
+    | '/connexion'
+    | '/contribuer'
+    | '/dossier'
+    | '/messages'
+    | '/notifications'
+    | '/parametres'
+    | '/profil'
+    | '/rapport'
+    | '/recherche'
+    | '/reseau'
+    | '/suivi'
+    | '/fa/$slug'
+    | '/onboarding/decouverte'
+    | '/onboarding/initie'
+    | '/services/$slug'
+    | '/fa'
+    | '/services'
   id:
     | '__root__'
     | '/'
+    | '/accompagnement'
     | '/accueil'
+    | '/admin'
+    | '/carnet'
+    | '/connexion'
+    | '/contribuer'
+    | '/dossier'
+    | '/messages'
+    | '/notifications'
+    | '/parametres'
+    | '/profil'
+    | '/rapport'
+    | '/recherche'
+    | '/reseau'
+    | '/suivi'
+    | '/fa/$slug'
     | '/onboarding/decouverte'
     | '/onboarding/initie'
+    | '/services/$slug'
     | '/fa/'
+    | '/services/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccompagnementRoute: typeof AccompagnementRoute
   AccueilRoute: typeof AccueilRoute
+  AdminRoute: typeof AdminRoute
+  CarnetRoute: typeof CarnetRoute
+  ConnexionRoute: typeof ConnexionRoute
+  ContribuerRoute: typeof ContribuerRoute
+  DossierRoute: typeof DossierRoute
+  MessagesRoute: typeof MessagesRoute
+  NotificationsRoute: typeof NotificationsRoute
+  ParametresRoute: typeof ParametresRoute
+  ProfilRoute: typeof ProfilRoute
+  RapportRoute: typeof RapportRoute
+  RechercheRoute: typeof RechercheRoute
+  ReseauRoute: typeof ReseauRoute
+  SuiviRoute: typeof SuiviRoute
+  FaSlugRoute: typeof FaSlugRoute
   OnboardingDecouverteRoute: typeof OnboardingDecouverteRoute
   OnboardingInitieRoute: typeof OnboardingInitieRoute
+  ServicesSlugRoute: typeof ServicesSlugRoute
   FaIndexRoute: typeof FaIndexRoute
+  ServicesIndexRoute: typeof ServicesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -95,6 +325,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/accompagnement': {
+      id: '/accompagnement'
+      path: '/accompagnement'
+      fullPath: '/accompagnement'
+      preLoaderRoute: typeof AccompagnementRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/accueil': {
       id: '/accueil'
       path: '/accueil'
@@ -102,11 +339,109 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccueilRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/carnet': {
+      id: '/carnet'
+      path: '/carnet'
+      fullPath: '/carnet'
+      preLoaderRoute: typeof CarnetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/connexion': {
+      id: '/connexion'
+      path: '/connexion'
+      fullPath: '/connexion'
+      preLoaderRoute: typeof ConnexionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contribuer': {
+      id: '/contribuer'
+      path: '/contribuer'
+      fullPath: '/contribuer'
+      preLoaderRoute: typeof ContribuerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dossier': {
+      id: '/dossier'
+      path: '/dossier'
+      fullPath: '/dossier'
+      preLoaderRoute: typeof DossierRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/parametres': {
+      id: '/parametres'
+      path: '/parametres'
+      fullPath: '/parametres'
+      preLoaderRoute: typeof ParametresRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profil': {
+      id: '/profil'
+      path: '/profil'
+      fullPath: '/profil'
+      preLoaderRoute: typeof ProfilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rapport': {
+      id: '/rapport'
+      path: '/rapport'
+      fullPath: '/rapport'
+      preLoaderRoute: typeof RapportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recherche': {
+      id: '/recherche'
+      path: '/recherche'
+      fullPath: '/recherche'
+      preLoaderRoute: typeof RechercheRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reseau': {
+      id: '/reseau'
+      path: '/reseau'
+      fullPath: '/reseau'
+      preLoaderRoute: typeof ReseauRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/suivi': {
+      id: '/suivi'
+      path: '/suivi'
+      fullPath: '/suivi'
+      preLoaderRoute: typeof SuiviRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/fa/': {
       id: '/fa/'
       path: '/fa'
       fullPath: '/fa/'
       preLoaderRoute: typeof FaIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fa/$slug': {
+      id: '/fa/$slug'
+      path: '/fa/$slug'
+      fullPath: '/fa/$slug'
+      preLoaderRoute: typeof FaSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding/decouverte': {
@@ -123,15 +458,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingInitieRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/services/': {
+      id: '/services/'
+      path: '/services'
+      fullPath: '/services/'
+      preLoaderRoute: typeof ServicesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/services/$slug': {
+      id: '/services/$slug'
+      path: '/services/$slug'
+      fullPath: '/services/$slug'
+      preLoaderRoute: typeof ServicesSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccompagnementRoute: AccompagnementRoute,
   AccueilRoute: AccueilRoute,
+  AdminRoute: AdminRoute,
+  CarnetRoute: CarnetRoute,
+  ConnexionRoute: ConnexionRoute,
+  ContribuerRoute: ContribuerRoute,
+  DossierRoute: DossierRoute,
+  MessagesRoute: MessagesRoute,
+  NotificationsRoute: NotificationsRoute,
+  ParametresRoute: ParametresRoute,
+  ProfilRoute: ProfilRoute,
+  RapportRoute: RapportRoute,
+  RechercheRoute: RechercheRoute,
+  ReseauRoute: ReseauRoute,
+  SuiviRoute: SuiviRoute,
+  FaSlugRoute: FaSlugRoute,
   OnboardingDecouverteRoute: OnboardingDecouverteRoute,
   OnboardingInitieRoute: OnboardingInitieRoute,
+  ServicesSlugRoute: ServicesSlugRoute,
   FaIndexRoute: FaIndexRoute,
+  ServicesIndexRoute: ServicesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

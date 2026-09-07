@@ -4,6 +4,7 @@ import { Check, ChevronLeft } from "lucide-react";
 import { Logo, Btn, Field, inputCls, Chip, Monogram } from "@/components/ifawa/primitives";
 import { signes } from "@/data/mock";
 import { actions } from "@/lib/store";
+import { signUpWithOnboarding } from "@/lib/ifawa-auth";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/onboarding/initie")({
@@ -19,30 +20,52 @@ export const Route = createFileRoute("/onboarding/initie")({
 });
 
 const satisfactions = ["Très insatisfait", "Insatisfait", "Mitigé", "Satisfait", "Très satisfait"];
-const etapes = ["Pseudonyme", "Photo", "Signe Fa", "Année", "Satisfaction", "Témoignage", "Mise en relation"];
+const etapes = ["Pseudonyme", "Photo", "Signe Fa", "Année", "Satisfaction", "Témoignage", "Mise en relation", "Compte"];
 
 function OnboardingInitie() {
   const navigate = useNavigate();
   const [etape, setEtape] = useState(0);
   const [pseudo, setPseudo] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [signe, setSigne] = useState("Gbé Mêdji");
   const [annee, setAnnee] = useState("2018");
   const [satisfaction, setSatisfaction] = useState("Satisfait");
   const [temoignage, setTemoignage] = useState("");
   const [relation, setRelation] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [confirmation, setConfirmation] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const suivant = () => {
+  const draft = {
+    pseudo: pseudo.trim() ? (pseudo.startsWith("@") ? pseudo : `@${pseudo}`) : "@Vous",
+    avatarUrl,
+    initie: true,
+    signe,
+    annee,
+    satisfaction,
+    temoignage: temoignage.trim() || "Témoignage non renseigné pour le moment.",
+    miseEnRelation: relation,
+  };
+
+  const suivant = async () => {
     if (etape < etapes.length - 1) return setEtape(etape + 1);
-    actions.majProfil({
-      pseudo: pseudo.trim() ? (pseudo.startsWith("@") ? pseudo : `@${pseudo}`) : "@Vous",
-      initie: true,
-      signe,
-      annee,
-      satisfaction,
-      temoignage: temoignage.trim() || "Témoignage non renseigné pour le moment.",
-      miseEnRelation: relation,
-    });
-    navigate({ to: "/accueil" });
+    setError("");
+    setLoading(true);
+    try {
+      const result = await signUpWithOnboarding(email, password, draft);
+      actions.majProfil(draft);
+      if (result.status === "signed-in") {
+        navigate({ to: "/accueil" });
+      } else {
+        setConfirmation(true);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Inscription impossible pour le moment.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -78,9 +101,20 @@ function OnboardingInitie() {
           {etape === 1 && (
             <Step titre="Ajoutez une photo de profil" texte="Cette étape est facultative. Vous pourrez la compléter plus tard.">
               <div className="flex items-center gap-4">
-                <Monogram name={pseudo || "Vous"} size={72} />
+                <Monogram name={pseudo || "Vous"} imageUrl={avatarUrl} size={72} />
                 <div className="space-y-2">
-                  <Btn variant="outline">Choisir une image</Btn>
+                  <input
+                    className={inputCls}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => setAvatarUrl(String(reader.result));
+                      reader.readAsDataURL(file);
+                    }}
+                  />
                   <p className="text-[12px] text-umber-soft">Un monogramme est utilisé par défaut.</p>
                 </div>
               </div>
@@ -166,6 +200,30 @@ function OnboardingInitie() {
               </div>
             </Step>
           )}
+
+          {etape === 7 && (
+            <Step titre="Créez votre compte" texte="Votre parcours est prêt. Indiquez seulement votre adresse email et un mot de passe pour enregistrer votre espace.">
+              {confirmation ? (
+                <div className="bg-forest p-5 text-ivory">
+                  <p className="font-display text-[26px] uppercase leading-none">Compte créé</p>
+                  <p className="mt-3 text-[14px] leading-relaxed text-ivory/75">
+                    Vérifiez votre email, puis connectez-vous pour accéder à votre espace Ifawa.
+                  </p>
+                  <Btn to="/connexion" className="mt-5" variant="outline">Se connecter</Btn>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <Field label="Adresse email">
+                    <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" />
+                  </Field>
+                  <Field label="Mot de passe">
+                    <input className={inputCls} value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="new-password" />
+                  </Field>
+                  {error && <p className="bg-clay/10 px-3 py-2 text-[13px] text-clay">{error}</p>}
+                </div>
+              )}
+            </Step>
+          )}
         </div>
 
         <div className="mt-10 flex items-center justify-between">
@@ -179,7 +237,11 @@ function OnboardingInitie() {
             {etape < etapes.length - 1 && (
               <Chip onClick={() => setEtape(etape + 1)}>Passer</Chip>
             )}
-            <Btn onClick={suivant}>{etape === etapes.length - 1 ? "Accéder à Ifawa" : "Continuer"}</Btn>
+            {!confirmation && (
+              <Btn onClick={suivant} disabled={etape === etapes.length - 1 && (loading || !email.trim() || password.length < 6)}>
+                {etape === etapes.length - 1 ? (loading ? "Création..." : "Créer mon compte") : "Continuer"}
+              </Btn>
+            )}
           </div>
         </div>
       </main>

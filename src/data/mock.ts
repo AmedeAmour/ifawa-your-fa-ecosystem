@@ -1,6 +1,4 @@
-// Toutes les données ci-dessous sont FICTIVES et servent uniquement à la démonstration.
-
-export const DEMO_NOTICE = "Contenu de démonstration";
+export const DEMO_NOTICE = "Contenu à valider";
 
 export type Signe = {
   slug: string;
@@ -32,27 +30,27 @@ const base = (
   soustitre,
   membres,
   contributions,
-  presentation: `${nom} est présenté ici sous forme de fiche de démonstration. Le texte affiché n'a aucune valeur d'enseignement et sert uniquement à illustrer la structure de la future bibliothèque Ifawa.`,
-  signification: `Signification générale (démonstration) : ce signe est associé, dans les contenus fictifs de ce prototype, à des thèmes de ${soustitre.toLowerCase()}. Le contenu réel sera rédigé et validé par l'équipe Ifawa et ses contributeurs.`,
+  presentation: `${nom} est une fiche de référence organisée pour la consultation des enseignements, interdits, recommandations et correspondances du signe.`,
+  signification: `Ce signe est présenté autour des thèmes de ${soustitre.toLowerCase()}, avec un contenu structuré pour faciliter la lecture et la contribution validée.`,
   enseignements: [
-    "Texte d'enseignement fictif numéro un, destiné à montrer la mise en page.",
-    "Texte d'enseignement fictif numéro deux, avec une longueur différente afin de vérifier le rythme typographique de la fiche.",
-    "Texte d'enseignement fictif numéro trois.",
+    "Enseignement principal à consulter dans la fiche du signe.",
+    "Point de compréhension complémentaire à relier au parcours du membre.",
+    "Repère de lecture destiné à accompagner les contributions validées.",
   ],
   interdits: [
-    "Interdit rapporté (démonstration) — élément fictif n°1.",
-    "Interdit rapporté (démonstration) — élément fictif n°2.",
+    "Interdit rapporté à documenter avec validation.",
+    "Point de prudence à confirmer avant publication définitive.",
   ],
   recommandations: [
-    "Recommandation fictive n°1 pour illustrer la section.",
-    "Recommandation fictive n°2.",
-    "Recommandation fictive n°3.",
+    "Recommandation à rattacher au contenu validé.",
+    "Orientation de lecture pour les membres du même signe.",
+    "Repère pratique à compléter lors de la validation éditoriale.",
   ],
   correspondances: [
-    { cle: "Élément", valeur: "Démonstration" },
-    { cle: "Période", valeur: "Démonstration" },
-    { cle: "Couleur", valeur: "Démonstration" },
-    { cle: "Jour", valeur: "Démonstration" },
+    { cle: "Élément", valeur: "À valider" },
+    { cle: "Période", valeur: "À valider" },
+    { cle: "Couleur", valeur: "À valider" },
+    { cle: "Jour", valeur: "À valider" },
   ],
   variantes: [
     "Variante régionale fictive A — formulation différente rapportée par des contributeurs.",
@@ -182,6 +180,7 @@ export type Post = {
   heure: string;
   contenu: string;
   image?: boolean;
+  mediaUrl?: string;
   reactions: number;
   commentaires: Commentaire[];
 };
@@ -231,7 +230,7 @@ export const posts: Post[] = [
     type: "Pédagogie",
     heure: "il y a 1 j",
     contenu:
-      "Comprendre les seize signes-mères : nous publions une fiche de démonstration par semaine. Contenu de démonstration, non authentifié.",
+      "Comprendre les seize signes-mères : nous publions une fiche structurée par semaine, avec relecture et validation progressive.",
     reactions: 55,
     commentaires: [],
   },
@@ -368,21 +367,21 @@ export const services = [
 ];
 
 export const formulesConsultation = [
-  { nom: "Standard", delai: "Jusqu'à 72 h", prix: "15 000 F (fictif)", points: ["Retour écrit", "1 question de suivi", "Historique conservé"] },
-  { nom: "Prioritaire", delai: "Jusqu'à 24 h", prix: "28 000 F (fictif)", points: ["Retour écrit détaillé", "3 questions de suivi", "Traitement accéléré"], recommande: true },
-  { nom: "Express", delai: "Traitement prioritaire", prix: "45 000 F (fictif)", points: ["Retour approfondi", "Questions illimitées 7 j", "Interlocuteur dédié"] },
+  { nom: "Standard", delai: "Jusqu'à 72 h", prix: "15 000 F", points: ["Retour écrit", "1 question de suivi", "Historique conservé"] },
+  { nom: "Prioritaire", delai: "Jusqu'à 24 h", prix: "28 000 F", points: ["Retour écrit détaillé", "3 questions de suivi", "Traitement accéléré"], recommande: true },
+  { nom: "Express", delai: "Traitement prioritaire", prix: "45 000 F", points: ["Retour approfondi", "Questions illimitées 7 j", "Interlocuteur dédié"] },
 ];
 
 export const formulesEtude = [
-  { nom: "3 praticiens", delai: "10 jours", rapport: "Rapport comparatif simple", prix: "60 000 F (fictif)" },
-  { nom: "5 praticiens", delai: "15 jours", rapport: "Rapport comparatif étendu", prix: "95 000 F (fictif)", recommande: true },
-  { nom: "7 praticiens", delai: "21 jours", rapport: "Rapport comparatif complet + synthèse", prix: "140 000 F (fictif)" },
+  { nom: "3 praticiens", delai: "10 jours", rapport: "Rapport comparatif simple", prix: "60 000 F" },
+  { nom: "5 praticiens", delai: "15 jours", rapport: "Rapport comparatif étendu", prix: "95 000 F", recommande: true },
+  { nom: "7 praticiens", delai: "21 jours", rapport: "Rapport comparatif complet + synthèse", prix: "140 000 F" },
 ];
 
 export const formulesAccompagnement = [
-  { nom: "3 mois", questions: "6 questions incluses", suivi: "1 compte rendu mensuel", avantages: ["Dossier Fa personnel", "Carnet de parcours"], prix: "75 000 F (fictif)" },
-  { nom: "6 mois", questions: "15 questions incluses", suivi: "2 comptes rendus mensuels", avantages: ["Dossier Fa personnel", "Carnet de parcours", "1 étude de signe offerte"], prix: "135 000 F (fictif)", recommande: true },
-  { nom: "12 mois", questions: "Questions illimitées", suivi: "Suivi continu", avantages: ["Dossier Fa personnel", "Carnet de parcours", "2 études de signe", "Interlocuteur dédié"], prix: "240 000 F (fictif)" },
+  { nom: "3 mois", questions: "6 questions incluses", suivi: "1 compte rendu mensuel", avantages: ["Dossier Fa personnel", "Carnet de parcours"], prix: "75 000 F" },
+  { nom: "6 mois", questions: "15 questions incluses", suivi: "2 comptes rendus mensuels", avantages: ["Dossier Fa personnel", "Carnet de parcours", "1 étude de signe offerte"], prix: "135 000 F", recommande: true },
+  { nom: "12 mois", questions: "Questions illimitées", suivi: "Suivi continu", avantages: ["Dossier Fa personnel", "Carnet de parcours", "2 études de signe", "Interlocuteur dédié"], prix: "240 000 F" },
 ];
 
 export const timelineConsultation = [
@@ -435,25 +434,25 @@ export const avisPraticiens = [
     titre: "Avis du praticien 1",
     ref: "PR-014",
     texte:
-      "Lecture de démonstration n°1. Le praticien relève une orientation vers la mesure et la temporisation. Contenu fictif présenté à titre d'illustration de la mise en page du rapport.",
+      "Le praticien relève une orientation vers la mesure et la temporisation.",
   },
   {
     titre: "Avis du praticien 2",
     ref: "PR-031",
     texte:
-      "Lecture de démonstration n°2. Formulation proche de la première, avec un accent différent sur la question de la transmission familiale. Contenu fictif.",
+      "Formulation proche de la première, avec un accent différent sur la question de la transmission familiale.",
   },
   {
     titre: "Avis du praticien 3",
     ref: "PR-027",
     texte:
-      "Lecture de démonstration n°3. Une variante régionale est signalée, ainsi qu'une recommandation qui n'apparaît pas dans les deux autres avis. Contenu fictif.",
+      "Une variante régionale est signalée, ainsi qu'une recommandation qui n'apparaît pas dans les deux autres avis.",
   },
 ];
 
 export const syntheseRapport = [
-  { titre: "Points de forte convergence", items: ["Élément fictif cité par les 3 praticiens.", "Second élément fictif convergent."] },
-  { titre: "Points rapportés par plusieurs praticiens", items: ["Élément fictif cité par 2 praticiens sur 3."] },
+  { titre: "Points de forte convergence", items: ["Élément cité par les 3 praticiens.", "Second élément convergent."] },
+  { titre: "Points rapportés par plusieurs praticiens", items: ["Élément cité par 2 praticiens sur 3."] },
   { titre: "Variantes", items: ["Variante régionale signalée par un seul praticien."] },
   { titre: "Divergences", items: ["Une divergence de formulation, sans opposition de fond."] },
   { titre: "Informations particulières", items: ["Une remarque isolée à conserver dans le dossier."] },

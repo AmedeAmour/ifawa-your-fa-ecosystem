@@ -1,13 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import logoSrc from "@/assets/ifawa-logo.png";
 import { cn } from "@/lib/utils";
 
 export function Logo({ className, mark = true }: { className?: string; mark?: boolean }) {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       {mark && (
-        <span className="grid size-8 shrink-0 place-items-center bg-umber font-display text-[17px] leading-none text-ivory">
-          I
+        <span className="grid size-10 shrink-0 place-items-center">
+          <img src={logoSrc} alt="" className="h-10 w-auto object-contain" />
         </span>
       )}
       <span className="font-display text-[24px] leading-none tracking-tight">IFAWA</span>
@@ -74,10 +75,12 @@ export function Monogram({
   name,
   size = 40,
   tone,
+  imageUrl,
 }: {
   name: string;
   size?: number;
   tone?: "clay" | "forest" | "brass" | "umber";
+  imageUrl?: string;
 }) {
   const letters = name.replace(/[@·]/g, "").trim().slice(0, 2).toUpperCase();
   const palette = ["bg-clay", "bg-forest", "bg-brass", "bg-umber"] as const;
@@ -92,7 +95,7 @@ export function Monogram({
       style={{ width: size, height: size, fontSize: size * 0.38 }}
       aria-hidden
     >
-      {letters}
+      {imageUrl ? <img src={imageUrl} alt="" className="size-full rounded-full object-cover" /> : letters}
     </span>
   );
 }
@@ -160,20 +163,12 @@ export function Chip({
       type="button"
       onClick={onClick}
       className={cn(
-        "px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+        "whitespace-nowrap px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
         active ? "bg-umber text-ivory" : "bg-ivory-deep text-umber-soft hover:bg-ivory-deep/70",
       )}
     >
       {children}
     </button>
-  );
-}
-
-export function DemoTag({ className }: { className?: string }) {
-  return (
-    <span className={cn("label-mono bg-brass/15 px-2 py-1 text-brass", className)}>
-      Contenu de démonstration
-    </span>
   );
 }
 

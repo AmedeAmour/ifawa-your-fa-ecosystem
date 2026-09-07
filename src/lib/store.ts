@@ -1,8 +1,12 @@
 import { useSyncExternalStore } from "react";
-import { posts as seedPosts, type Post, demandesConnexion } from "@/data/mock";
+import { posts as seedPosts, type Post, demandesConnexion, notifications as seedNotifications, type Notification } from "@/data/mock";
+
+export type ReactionKind = "like" | "love" | "laugh" | "support";
 
 export type Profil = {
   pseudo: string;
+  avatarUrl?: string;
+  coverUrl?: string;
   initie: boolean;
   signe: string;
   annee: string;
@@ -16,7 +20,8 @@ export type AppState = {
   onboarded: boolean;
   profil: Profil;
   posts: Post[];
-  reactions: Record<string, boolean>;
+  reactions: Record<string, ReactionKind>;
+  notifications: Notification[];
   connexions: string[];
   demandes: { id: string; etat: "attente" | "acceptee" | "refusee" }[];
   demandesEnvoyees: string[];
@@ -37,12 +42,32 @@ const initial: AppState = {
   },
   posts: seedPosts,
   reactions: {},
+  notifications: seedNotifications,
   connexions: ["segbo23", "ayaba", "todan"],
   demandes: demandesConnexion.map((d) => ({ id: d.id, etat: "attente" as const })),
   demandesEnvoyees: [],
 };
 
-let state: AppState = initial;
+const storageKey = "ifawa.app-state";
+
+function readInitialState() {
+  if (typeof window === "undefined") return initial;
+  const raw = window.localStorage.getItem(storageKey);
+  if (!raw) return initial;
+  try {
+    return { ...initial, ...(JSON.parse(raw) as Partial<AppState>) };
+  } catch {
+    window.localStorage.removeItem(storageKey);
+    return initial;
+  }
+}
+
+function persist(next: AppState) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(storageKey, JSON.stringify(next));
+}
+
+let state: AppState = readInitialState();
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -52,6 +77,7 @@ function emit() {
 export function setState(patch: Partial<AppState> | ((s: AppState) => Partial<AppState>)) {
   const next = typeof patch === "function" ? patch(state) : patch;
   state = { ...state, ...next };
+  persist(state);
   emit();
 }
 
@@ -67,7 +93,7 @@ export function useApp(): AppState {
 }
 
 export const actions = {
-  publier(contenu: string, avecImage = false) {
+  publier(contenu: string, mediaUrl = "", type: Post["type"] = "Membre") {
     if (!contenu.trim()) return;
     setState((s) => ({
       posts: [
@@ -75,10 +101,11 @@ export const actions = {
           id: `p-${Date.now()}`,
           auteur: s.profil.pseudo,
           signe: s.profil.initie ? s.profil.signe : undefined,
-          type: "Membre",
+          type,
           heure: "à l'instant",
           contenu,
-          image: avecImage,
+          image: Boolean(mediaUrl),
+          mediaUrl,
           reactions: 0,
           commentaires: [],
         },
@@ -86,13 +113,20 @@ export const actions = {
       ],
     }));
   },
-  reagir(id: string) {
+  reagir(id: string, reaction: ReactionKind) {
     setState((s) => {
-      const actif = !s.reactions[id];
+      const active = s.reactions[id];
+      const nextReactions = { ...s.reactions };
+      const delta = active ? (active === reaction ? -1 : 0) : 1;
+      if (active === reaction) {
+        delete nextReactions[id];
+      } else {
+        nextReactions[id] = reaction;
+      }
       return {
-        reactions: { ...s.reactions, [id]: actif },
+        reactions: nextReactions,
         posts: s.posts.map((p) =>
-          p.id === id ? { ...p, reactions: p.reactions + (actif ? 1 : -1) } : p,
+          p.id === id ? { ...p, reactions: Math.max(0, p.reactions + delta) } : p,
         ),
       };
     });
@@ -113,6 +147,40 @@ export const actions = {
       ),
     }));
   },
+  supprimerCommentaire(postId: string, commentaireId: string) {
+    setState((s) => ({
+      posts: s.posts.map((p) =>
+        p.id === postId
+          ? { ...p, commentaires: p.commentaires.filter((c) => c.id !== commentaireId || c.auteur !== s.profil.pseudo) }
+          : p,
+      ),
+    }));
+  },
+  partager(id: string, note = "") {
+    setState((s) => {
+      const post = s.posts.find((p) => p.id === id);
+      if (!post) return {};
+      const contenu = note.trim()
+        ? `${note.trim()}\n\nPublication partagée de ${post.auteur} : ${post.contenu}`
+        : `Publication partagée de ${post.auteur} : ${post.contenu}`;
+      return {
+        posts: [
+          {
+            id: `share-${Date.now()}`,
+            auteur: s.profil.pseudo,
+            signe: s.profil.initie ? s.profil.signe : undefined,
+            type: "Membre",
+            heure: "à l'instant",
+            contenu,
+            image: post.image,
+            reactions: 0,
+            commentaires: [],
+          },
+          ...s.posts,
+        ],
+      };
+    });
+  },
   repondreDemande(id: string, etat: "acceptee" | "refusee") {
     setState((s) => ({
       demandes: s.demandes.map((d) => (d.id === id ? { ...d, etat } : d)),
@@ -128,5 +196,17 @@ export const actions = {
   },
   majProfil(patch: Partial<Profil>) {
     setState((s) => ({ profil: { ...s.profil, ...patch }, onboarded: true }));
+  },
+  lireNotification(id: string) {
+    setState((s) => ({
+      notifications: s.notifications.map((notification) =>
+        notification.id === id ? { ...notification, nonLue: false } : notification,
+      ),
+    }));
+  },
+  toutLireNotifications() {
+    setState((s) => ({
+      notifications: s.notifications.map((notification) => ({ ...notification, nonLue: false })),
+    }));
   },
 };
