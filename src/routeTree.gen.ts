@@ -10,33 +10,80 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccueilRouteImport } from './routes/accueil'
+import { Route as FaIndexRouteImport } from './routes/fa.index'
+import { Route as OnboardingDecouverteRouteImport } from './routes/onboarding.decouverte'
+import { Route as OnboardingInitieRouteImport } from './routes/onboarding.initie'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccueilRoute = AccueilRouteImport.update({
+  id: '/accueil',
+  path: '/accueil',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FaIndexRoute = FaIndexRouteImport.update({
+  id: '/fa/',
+  path: '/fa/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingDecouverteRoute = OnboardingDecouverteRouteImport.update({
+  id: '/onboarding/decouverte',
+  path: '/onboarding/decouverte',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingInitieRoute = OnboardingInitieRouteImport.update({
+  id: '/onboarding/initie',
+  path: '/onboarding/initie',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/accueil': typeof AccueilRoute
+  '/onboarding/decouverte': typeof OnboardingDecouverteRoute
+  '/onboarding/initie': typeof OnboardingInitieRoute
+  '/fa/': typeof FaIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/accueil': typeof AccueilRoute
+  '/onboarding/decouverte': typeof OnboardingDecouverteRoute
+  '/onboarding/initie': typeof OnboardingInitieRoute
+  '/fa': typeof FaIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/accueil': typeof AccueilRoute
+  '/onboarding/decouverte': typeof OnboardingDecouverteRoute
+  '/onboarding/initie': typeof OnboardingInitieRoute
+  '/fa/': typeof FaIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    '/' | '/accueil' | '/onboarding/decouverte' | '/onboarding/initie' | '/fa/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/accueil' | '/onboarding/decouverte' | '/onboarding/initie' | '/fa'
+  id:
+    | '__root__'
+    | '/'
+    | '/accueil'
+    | '/onboarding/decouverte'
+    | '/onboarding/initie'
+    | '/fa/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccueilRoute: typeof AccueilRoute
+  OnboardingDecouverteRoute: typeof OnboardingDecouverteRoute
+  OnboardingInitieRoute: typeof OnboardingInitieRoute
+  FaIndexRoute: typeof FaIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +95,43 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/accueil': {
+      id: '/accueil'
+      path: '/accueil'
+      fullPath: '/accueil'
+      preLoaderRoute: typeof AccueilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/fa/': {
+      id: '/fa/'
+      path: '/fa'
+      fullPath: '/fa/'
+      preLoaderRoute: typeof FaIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding/decouverte': {
+      id: '/onboarding/decouverte'
+      path: '/onboarding/decouverte'
+      fullPath: '/onboarding/decouverte'
+      preLoaderRoute: typeof OnboardingDecouverteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding/initie': {
+      id: '/onboarding/initie'
+      path: '/onboarding/initie'
+      fullPath: '/onboarding/initie'
+      preLoaderRoute: typeof OnboardingInitieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccueilRoute: AccueilRoute,
+  OnboardingDecouverteRoute: OnboardingDecouverteRoute,
+  OnboardingInitieRoute: OnboardingInitieRoute,
+  FaIndexRoute: FaIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
