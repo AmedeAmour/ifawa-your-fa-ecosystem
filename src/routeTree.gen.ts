@@ -10,33 +10,53 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as OnboardingDecouverteRouteImport } from './routes/onboarding.decouverte'
+import { Route as OnboardingInitieRouteImport } from './routes/onboarding.initie'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnboardingDecouverteRoute = OnboardingDecouverteRouteImport.update({
+  id: '/onboarding/decouverte',
+  path: '/onboarding/decouverte',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingInitieRoute = OnboardingInitieRouteImport.update({
+  id: '/onboarding/initie',
+  path: '/onboarding/initie',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/onboarding/decouverte': typeof OnboardingDecouverteRoute
+  '/onboarding/initie': typeof OnboardingInitieRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/onboarding/decouverte': typeof OnboardingDecouverteRoute
+  '/onboarding/initie': typeof OnboardingInitieRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/onboarding/decouverte': typeof OnboardingDecouverteRoute
+  '/onboarding/initie': typeof OnboardingInitieRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/onboarding/decouverte' | '/onboarding/initie'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/onboarding/decouverte' | '/onboarding/initie'
+  id: '__root__' | '/' | '/onboarding/decouverte' | '/onboarding/initie'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  OnboardingDecouverteRoute: typeof OnboardingDecouverteRoute
+  OnboardingInitieRoute: typeof OnboardingInitieRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +68,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding/decouverte': {
+      id: '/onboarding/decouverte'
+      path: '/onboarding/decouverte'
+      fullPath: '/onboarding/decouverte'
+      preLoaderRoute: typeof OnboardingDecouverteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding/initie': {
+      id: '/onboarding/initie'
+      path: '/onboarding/initie'
+      fullPath: '/onboarding/initie'
+      preLoaderRoute: typeof OnboardingInitieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  OnboardingDecouverteRoute: OnboardingDecouverteRoute,
+  OnboardingInitieRoute: OnboardingInitieRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
