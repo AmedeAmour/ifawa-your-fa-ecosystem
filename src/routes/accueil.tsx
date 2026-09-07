@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image as ImageIcon, Compass } from "lucide-react";
 import { Shell } from "@/components/ifawa/Shell";
 import { PostCard } from "@/components/ifawa/PostCard";
 import { Btn, Kicker, Monogram, Panel, SectionTitle } from "@/components/ifawa/primitives";
 import { actions, useApp } from "@/lib/store";
+import { createRemotePost, loadFeedFromSupabase } from "@/lib/ifawa-social";
 import { decouverte } from "@/data/mock";
 import { cn } from "@/lib/utils";
 
@@ -12,9 +13,15 @@ export const Route = createFileRoute("/accueil")({
   head: () => ({
     meta: [
       { title: "Fil d'actualité — IFAWA" },
-      { name: "description", content: "Publications, témoignages et annonces de la communauté Ifawa autour du Fa." },
+      {
+        name: "description",
+        content: "Publications, témoignages et annonces de la communauté Ifawa autour du Fa.",
+      },
       { property: "og:title", content: "Fil d'actualité — IFAWA" },
-      { property: "og:description", content: "Suivez la communauté Ifawa : publications, témoignages et contenus pédagogiques." },
+      {
+        property: "og:description",
+        content: "Suivez la communauté Ifawa : publications, témoignages et contenus pédagogiques.",
+      },
     ],
   }),
   component: Accueil,
@@ -29,6 +36,19 @@ function Accueil() {
   const fileRef = useRef<HTMLInputElement>(null);
   const filtres = ["Tout", "Membres", "Officiel", "Témoignages"];
   const types = ["Témoignage", "Question", "Contribution"] as const;
+
+  async function refreshFeed() {
+    try {
+      const remote = await loadFeedFromSupabase();
+      if (remote) actions.remplacerPosts(remote.posts, remote.reactions);
+    } catch {
+      // The local feed remains available if the remote feed is temporarily unreachable.
+    }
+  }
+
+  useEffect(() => {
+    void refreshFeed();
+  }, []);
 
   const visibles = posts.filter((p) =>
     filtre === "Tout"
@@ -105,10 +125,18 @@ function Accueil() {
                 </button>
               )}
               <Btn
-                onClick={() => {
-                  actions.publier(texte, imageUrl, type);
+                onClick={async () => {
+                  const content = texte;
+                  const media = imageUrl;
+                  actions.publier(content, media, type);
                   setTexte("");
                   setImageUrl("");
+                  try {
+                    await createRemotePost(content, type, media);
+                    await refreshFeed();
+                  } catch {
+                    // Keep the optimistic local publication visible.
+                  }
                 }}
                 disabled={!texte.trim()}
                 className="ml-auto"
@@ -116,7 +144,9 @@ function Accueil() {
                 Publier
               </Btn>
             </div>
-            {imageUrl && <img src={imageUrl} alt="" className="mt-3 aspect-[16/10] w-full object-cover" />}
+            {imageUrl && (
+              <img src={imageUrl} alt="" className="mt-3 aspect-[16/10] w-full object-cover" />
+            )}
           </div>
         </div>
       </Panel>
@@ -128,7 +158,9 @@ function Accueil() {
             onClick={() => setFiltre(f)}
             className={cn(
               "px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
-              filtre === f ? "bg-umber text-ivory" : "bg-ivory-deep text-umber-soft hover:bg-ivory-deep/70",
+              filtre === f
+                ? "bg-umber text-ivory"
+                : "bg-ivory-deep text-umber-soft hover:bg-ivory-deep/70",
             )}
           >
             {f}
@@ -139,7 +171,6 @@ function Accueil() {
       {visibles.map((p, i) => (
         <PostCard key={p.id} post={p} index={i} />
       ))}
-
     </Shell>
   );
 }
@@ -150,7 +181,11 @@ function DecouverteBloc() {
       <SectionTitle aside="Non initié(e)">Découvrir le Fa</SectionTitle>
       <div className="grid gap-3 sm:grid-cols-2">
         {decouverte.map((d, i) => (
-          <div key={d.titre} className="bg-card carved p-4" style={{ animationDelay: `${i * 40}ms` }}>
+          <div
+            key={d.titre}
+            className="bg-card carved p-4"
+            style={{ animationDelay: `${i * 40}ms` }}
+          >
             <Kicker>{String(i + 1).padStart(2, "0")}</Kicker>
             <p className="mt-2 font-display text-[18px] uppercase leading-tight">{d.titre}</p>
             <p className="mt-1.5 text-[13px] leading-relaxed text-umber-soft">{d.texte}</p>
@@ -161,7 +196,9 @@ function DecouverteBloc() {
         to="/services/initiation"
         className="mt-3 flex items-center justify-between bg-clay px-5 py-4 text-ivory transition-colors hover:bg-clay/90"
       >
-        <span className="font-display text-[20px] uppercase leading-none">Demander une initiation</span>
+        <span className="font-display text-[20px] uppercase leading-none">
+          Demander une initiation
+        </span>
         <Compass className="size-5" />
       </Link>
     </section>

@@ -1,5 +1,11 @@
 import { useSyncExternalStore } from "react";
-import { posts as seedPosts, type Post, demandesConnexion, notifications as seedNotifications, type Notification } from "@/data/mock";
+import {
+  posts as seedPosts,
+  type Post,
+  demandesConnexion,
+  notifications as seedNotifications,
+  type Notification,
+} from "@/data/mock";
 
 export type ReactionKind = "like" | "love" | "laugh" | "support";
 
@@ -18,6 +24,7 @@ export type Profil = {
 
 export type AppState = {
   onboarded: boolean;
+  currentUserId?: string;
   profil: Profil;
   posts: Post[];
   reactions: Record<string, ReactionKind>;
@@ -67,7 +74,7 @@ function persist(next: AppState) {
   window.localStorage.setItem(storageKey, JSON.stringify(next));
 }
 
-let state: AppState = readInitialState();
+let state: AppState = initial;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -93,6 +100,19 @@ export function useApp(): AppState {
 }
 
 export const actions = {
+  hydratePersistedState() {
+    state = readInitialState();
+    emit();
+  },
+  setCurrentUserId(userId?: string) {
+    setState({ currentUserId: userId });
+  },
+  remplacerPosts(posts: Post[], reactions?: Record<string, ReactionKind>) {
+    setState((s) => ({
+      posts,
+      reactions: reactions ?? s.reactions,
+    }));
+  },
   publier(contenu: string, mediaUrl = "", type: Post["type"] = "Membre") {
     if (!contenu.trim()) return;
     setState((s) => ({
@@ -100,6 +120,7 @@ export const actions = {
         {
           id: `p-${Date.now()}`,
           auteur: s.profil.pseudo,
+          authorAvatarUrl: s.profil.avatarUrl,
           signe: s.profil.initie ? s.profil.signe : undefined,
           type,
           heure: "à l'instant",
@@ -108,6 +129,7 @@ export const actions = {
           mediaUrl,
           reactions: 0,
           commentaires: [],
+          canEdit: true,
         },
         ...s.posts,
       ],
@@ -140,7 +162,15 @@ export const actions = {
               ...p,
               commentaires: [
                 ...p.commentaires,
-                { id: `c-${Date.now()}`, auteur: s.profil.pseudo, texte, heure: "à l'instant" },
+                {
+                  id: `c-${Date.now()}`,
+                  authorId: s.currentUserId,
+                  auteur: s.profil.pseudo,
+                  authorAvatarUrl: s.profil.avatarUrl,
+                  texte,
+                  heure: "à l'instant",
+                  canDelete: true,
+                },
               ],
             }
           : p,
@@ -151,7 +181,12 @@ export const actions = {
     setState((s) => ({
       posts: s.posts.map((p) =>
         p.id === postId
-          ? { ...p, commentaires: p.commentaires.filter((c) => c.id !== commentaireId || c.auteur !== s.profil.pseudo) }
+          ? {
+              ...p,
+              commentaires: p.commentaires.filter(
+                (c) => c.id !== commentaireId || c.auteur !== s.profil.pseudo,
+              ),
+            }
           : p,
       ),
     }));
@@ -168,18 +203,32 @@ export const actions = {
           {
             id: `share-${Date.now()}`,
             auteur: s.profil.pseudo,
+            authorAvatarUrl: s.profil.avatarUrl,
             signe: s.profil.initie ? s.profil.signe : undefined,
             type: "Membre",
             heure: "à l'instant",
             contenu,
             image: post.image,
+            mediaUrl: post.mediaUrl,
             reactions: 0,
             commentaires: [],
+            canEdit: true,
           },
           ...s.posts,
         ],
       };
     });
+  },
+  supprimerPublication(id: string) {
+    setState((s) => ({
+      posts: s.posts.filter((p) => p.id !== id || !p.canEdit),
+    }));
+  },
+  modifierPublication(id: string, contenu: string) {
+    if (!contenu.trim()) return;
+    setState((s) => ({
+      posts: s.posts.map((p) => (p.id === id && p.canEdit ? { ...p, contenu } : p)),
+    }));
   },
   repondreDemande(id: string, etat: "acceptee" | "refusee") {
     setState((s) => ({
@@ -189,9 +238,7 @@ export const actions = {
   },
   envoyerDemande(id: string) {
     setState((s) =>
-      s.demandesEnvoyees.includes(id)
-        ? {}
-        : { demandesEnvoyees: [...s.demandesEnvoyees, id] },
+      s.demandesEnvoyees.includes(id) ? {} : { demandesEnvoyees: [...s.demandesEnvoyees, id] },
     );
   },
   majProfil(patch: Partial<Profil>) {

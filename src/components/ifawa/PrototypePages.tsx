@@ -33,8 +33,27 @@ import {
 import { actions, useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { fetchServiceCatalog, type ServiceCard } from "@/lib/ifawa-services";
-import { updateProfileMedia } from "@/lib/ifawa-auth";
-import { Btn, Chip, Empty, Field, Kicker, Monogram, PageTitle, Panel, inputCls } from "./primitives";
+import { updateProfileSettings } from "@/lib/ifawa-auth";
+import {
+  answerRemoteConnection,
+  loadConversationsFromSupabase,
+  loadNetworkFromSupabase,
+  sendRemoteConnection,
+  sendRemoteMessage,
+  type ConversationItem,
+  type NetworkMember,
+} from "@/lib/ifawa-social";
+import {
+  Btn,
+  Chip,
+  Empty,
+  Field,
+  Kicker,
+  Monogram,
+  PageTitle,
+  Panel,
+  inputCls,
+} from "./primitives";
 import { PostCard } from "./PostCard";
 import { Shell } from "./Shell";
 
@@ -72,8 +91,115 @@ function readFileAsDataUrl(file: File) {
 
 export function ReseauPage() {
   const { demandes, demandesEnvoyees, connexions, profil } = useApp();
+  const [remoteNetwork, setRemoteNetwork] = useState<Awaited<
+    ReturnType<typeof loadNetworkFromSupabase>
+  > | null>(null);
   const connexionsActuelles = membres.filter((m) => connexions.includes(m.id));
   const suggestions = membres.filter((m) => !connexions.includes(m.id));
+
+  async function refreshNetwork() {
+    try {
+      setRemoteNetwork(await loadNetworkFromSupabase());
+    } catch {
+      setRemoteNetwork(null);
+    }
+  }
+
+  useEffect(() => {
+    void refreshNetwork();
+  }, []);
+
+  if (remoteNetwork) {
+    return (
+      <Shell>
+        <PageTitle kicker="Réseau">Membres et connexions</PageTitle>
+
+        <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
+          <Panel>
+            <SectionHeader icon={Users} title="Demandes reçues" />
+            <div className="space-y-3">
+              {remoteNetwork.received.length ? (
+                remoteNetwork.received.map((member) => (
+                  <RemoteMemberRow key={member.id} member={member}>
+                    <Btn
+                      onClick={async () => {
+                        if (!member.requestId) return;
+                        await answerRemoteConnection(member.requestId, "accepted");
+                        await refreshNetwork();
+                      }}
+                    >
+                      Accepter
+                    </Btn>
+                    <Btn
+                      variant="quiet"
+                      onClick={async () => {
+                        if (!member.requestId) return;
+                        await answerRemoteConnection(member.requestId, "rejected");
+                        await refreshNetwork();
+                      }}
+                    >
+                      Refuser
+                    </Btn>
+                  </RemoteMemberRow>
+                ))
+              ) : (
+                <Empty titre="Aucune demande" texte="Les nouvelles invitations apparaîtront ici." />
+              )}
+            </div>
+          </Panel>
+
+          <Panel tone="deep">
+            <SectionHeader icon={Shield} title="Suggestions" />
+            <p className="mb-4 text-[13px] leading-relaxed text-umber-soft">
+              Retrouvez les membres disponibles et envoyez une demande de connexion.
+            </p>
+            <div className="space-y-3">
+              {[...remoteNetwork.sent, ...remoteNetwork.suggestions].slice(0, 8).map((member) => (
+                <RemoteMemberRow key={member.id} member={member}>
+                  {member.status === "pending" ? (
+                    <span className="label-mono text-clay">Demande envoyée</span>
+                  ) : (
+                    <Btn
+                      variant="outline"
+                      onClick={async () => {
+                        await sendRemoteConnection(member.id);
+                        await refreshNetwork();
+                      }}
+                    >
+                      Ajouter
+                    </Btn>
+                  )}
+                </RemoteMemberRow>
+              ))}
+            </div>
+          </Panel>
+        </div>
+
+        <Panel tone="forest" className="mt-5">
+          <Kicker className="text-brass">Connexions actuelles</Kicker>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            {remoteNetwork.accepted.length ? (
+              remoteNetwork.accepted.map((member) => (
+                <Link
+                  key={member.id}
+                  to="/profil"
+                  className="bg-ivory/10 p-4 transition-colors hover:bg-ivory/15"
+                >
+                  <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={38} />
+                  <p className="mt-3 font-semibold">{member.pseudo}</p>
+                  <p className="label-mono mt-1 text-ivory/60">{member.signe}</p>
+                </Link>
+              ))
+            ) : (
+              <p className="text-[13px] text-ivory/70">
+                Vos connexions acceptées apparaîtront ici.
+              </p>
+            )}
+          </div>
+        </Panel>
+      </Shell>
+    );
+  }
 
   return (
     <Shell>
@@ -86,14 +212,28 @@ export function ReseauPage() {
             {demandesConnexion.map((demande) => {
               const etat = demandes.find((d) => d.id === demande.id)?.etat ?? "attente";
               return (
-                <MemberRow key={demande.id} name={demande.pseudo} meta={`${demande.motif} · ${demande.signe}`} active={etat === "acceptee"}>
+                <MemberRow
+                  key={demande.id}
+                  name={demande.pseudo}
+                  meta={`${demande.motif} · ${demande.signe}`}
+                  active={etat === "acceptee"}
+                >
                   {etat === "attente" ? (
                     <div className="flex gap-2">
-                      <Btn onClick={() => actions.repondreDemande(demande.id, "acceptee")}>Accepter</Btn>
-                      <Btn variant="quiet" onClick={() => actions.repondreDemande(demande.id, "refusee")}>Refuser</Btn>
+                      <Btn onClick={() => actions.repondreDemande(demande.id, "acceptee")}>
+                        Accepter
+                      </Btn>
+                      <Btn
+                        variant="quiet"
+                        onClick={() => actions.repondreDemande(demande.id, "refusee")}
+                      >
+                        Refuser
+                      </Btn>
                     </div>
                   ) : (
-                    <span className="label-mono text-clay">{etat === "acceptee" ? "Acceptée" : "Refusée"}</span>
+                    <span className="label-mono text-clay">
+                      {etat === "acceptee" ? "Acceptée" : "Refusée"}
+                    </span>
                   )}
                 </MemberRow>
               );
@@ -104,15 +244,22 @@ export function ReseauPage() {
         <Panel tone="deep">
           <SectionHeader icon={Shield} title="Même signe que vous" />
           <p className="mb-4 text-[13px] leading-relaxed text-umber-soft">
-            Votre signe actuel : {profil.signe}. Les demandes restent encadrées par vos réglages de confidentialité.
+            Votre signe actuel : {profil.signe}. Les demandes restent encadrées par vos réglages de
+            confidentialité.
           </p>
           <div className="space-y-3">
             {suggestions.slice(0, 5).map((membre) => (
-              <MemberRow key={membre.id} name={membre.pseudo} meta={`${membre.signe} · ${membre.connexions} connexions`}>
+              <MemberRow
+                key={membre.id}
+                name={membre.pseudo}
+                meta={`${membre.signe} · ${membre.connexions} connexions`}
+              >
                 {demandesEnvoyees.includes(membre.id) ? (
                   <span className="label-mono text-clay">Demande envoyée</span>
                 ) : (
-                  <Btn variant="outline" onClick={() => actions.envoyerDemande(membre.id)}>Ajouter</Btn>
+                  <Btn variant="outline" onClick={() => actions.envoyerDemande(membre.id)}>
+                    Ajouter
+                  </Btn>
                 )}
               </MemberRow>
             ))}
@@ -124,7 +271,11 @@ export function ReseauPage() {
         <Kicker className="text-brass">Connexions actuelles</Kicker>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {connexionsActuelles.map((membre) => (
-            <Link key={membre.id} to="/profil" className="bg-ivory/10 p-4 transition-colors hover:bg-ivory/15">
+            <Link
+              key={membre.id}
+              to="/profil"
+              className="bg-ivory/10 p-4 transition-colors hover:bg-ivory/15"
+            >
               <Monogram name={membre.pseudo} size={38} />
               <p className="mt-3 font-semibold">{membre.pseudo}</p>
               <p className="label-mono mt-1 text-ivory/60">{membre.signe}</p>
@@ -139,8 +290,29 @@ export function ReseauPage() {
 export function MessagesPage() {
   const [active, setActive] = useState("");
   const [draft, setDraft] = useState("");
-  const [localMessages, setLocalMessages] = useState(conversations);
+  const [localMessages, setLocalMessages] = useState<ConversationItem[]>(
+    conversations.map((conversation) => ({
+      ...conversation,
+      messages: conversation.messages.map((message, index) => ({
+        ...message,
+        id: `${conversation.id}-${index}`,
+      })),
+    })),
+  );
   const conversation = localMessages.find((c) => c.id === active);
+
+  async function refreshMessages() {
+    try {
+      const remote = await loadConversationsFromSupabase();
+      if (remote) setLocalMessages(remote);
+    } catch {
+      // Keep local conversations visible if the remote channel is unavailable.
+    }
+  }
+
+  useEffect(() => {
+    void refreshMessages();
+  }, []);
 
   return (
     <Shell>
@@ -151,14 +323,28 @@ export function MessagesPage() {
             <button
               key={item.id}
               onClick={() => setActive(item.id)}
-              className={cn("flex w-full items-center gap-3 p-3 text-left transition-colors", active === item.id ? "bg-umber text-ivory" : "hover:bg-ivory-deep")}
+              className={cn(
+                "flex w-full items-center gap-3 p-3 text-left transition-colors",
+                active === item.id ? "bg-umber text-ivory" : "hover:bg-ivory-deep",
+              )}
             >
               <Monogram name={item.pseudo} size={38} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-semibold">{item.pseudo}</span>
-                <span className={cn("block truncate text-[12px]", active === item.id ? "text-ivory/60" : "text-umber-soft")}>{item.extrait}</span>
+                <span
+                  className={cn(
+                    "block truncate text-[12px]",
+                    active === item.id ? "text-ivory/60" : "text-umber-soft",
+                  )}
+                >
+                  {item.extrait}
+                </span>
               </span>
-              {item.nonLus > 0 && <span className="grid size-5 place-items-center rounded-full bg-clay font-mono text-[9px] text-ivory">{item.nonLus}</span>}
+              {item.nonLus > 0 && (
+                <span className="grid size-5 place-items-center rounded-full bg-clay font-mono text-[9px] text-ivory">
+                  {item.nonLus}
+                </span>
+              )}
             </button>
           ))}
         </Panel>
@@ -174,7 +360,7 @@ export function MessagesPage() {
               >
                 <ChevronLeft className="size-5" />
               </button>
-              <Monogram name={conversation.pseudo} size={42} />
+              <Monogram name={conversation.pseudo} imageUrl={conversation.avatarUrl} size={42} />
               <div>
                 <p className="font-semibold">{conversation.pseudo}</p>
                 <p className="label-mono text-umber-soft">Conversation</p>
@@ -182,9 +368,22 @@ export function MessagesPage() {
             </div>
             <div className="flex-1 space-y-3">
               {conversation.messages.map((message, index) => (
-                <div key={`${message.heure}-${index}`} className={cn("max-w-[78%] p-3 text-[13px] leading-relaxed", message.de === "moi" ? "ml-auto bg-forest text-ivory" : "bg-card carved")}>
+                <div
+                  key={`${message.heure}-${index}`}
+                  className={cn(
+                    "max-w-[78%] p-3 text-[13px] leading-relaxed",
+                    message.de === "moi" ? "ml-auto bg-forest text-ivory" : "bg-card carved",
+                  )}
+                >
                   {message.texte}
-                  <span className={cn("label-mono mt-1 block", message.de === "moi" ? "text-ivory/55" : "text-umber-soft/70")}>{message.heure}</span>
+                  <span
+                    className={cn(
+                      "label-mono mt-1 block",
+                      message.de === "moi" ? "text-ivory/55" : "text-umber-soft/70",
+                    )}
+                  >
+                    {message.heure}
+                  </span>
                 </div>
               ))}
             </div>
@@ -195,21 +394,46 @@ export function MessagesPage() {
                 setLocalMessages((items) =>
                   items.map((item) =>
                     item.id === conversation.id
-                      ? { ...item, extrait: draft, messages: [...item.messages, { de: "moi", texte: draft, heure: "à l'instant" }] }
+                      ? {
+                          ...item,
+                          extrait: draft,
+                          messages: [
+                            ...item.messages,
+                            {
+                              id: `local-${Date.now()}`,
+                              de: "moi",
+                              texte: draft,
+                              heure: "à l'instant",
+                            },
+                          ],
+                        }
                       : item,
                   ),
                 );
+                void sendRemoteMessage(conversation.id, draft)
+                  .then(refreshMessages)
+                  .catch(refreshMessages);
                 setDraft("");
               }}
               className="mt-5 flex gap-2"
             >
-              <input className={inputCls} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Écrire un message…" />
-              <Btn type="submit"><Send className="size-3.5" /> Envoyer</Btn>
+              <input
+                className={inputCls}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="Écrire un message…"
+              />
+              <Btn type="submit">
+                <Send className="size-3.5" /> Envoyer
+              </Btn>
             </form>
           </Panel>
         ) : (
           <Panel tone="deep" className="hidden items-center justify-center lg:flex">
-            <Empty titre="Sélectionnez une conversation" texte="Choisissez un échange dans la liste pour lire et répondre." />
+            <Empty
+              titre="Sélectionnez une conversation"
+              texte="Choisissez un échange dans la liste pour lire et répondre."
+            />
           </Panel>
         )}
       </div>
@@ -237,17 +461,28 @@ export function ProfilPage() {
             <div>
               <h1 className="font-display text-[38px] uppercase leading-none">{profil.pseudo}</h1>
               <p className="mt-2 text-[13px] text-ivory/70">
-                {connexions.length} connexions · {profil.initie ? `${profil.signe} · initié en ${profil.annee}` : "Espace découverte"}
+                {connexions.length} connexions ·{" "}
+                {profil.initie
+                  ? `${profil.signe} · initié en ${profil.annee}`
+                  : "Espace découverte"}
               </p>
             </div>
           </div>
-          <Btn to="/parametres" variant="outline" className="border-ivory/25 text-ivory hover:bg-ivory/10">Modifier</Btn>
+          <Btn
+            to="/parametres"
+            variant="outline"
+            className="border-ivory/25 text-ivory hover:bg-ivory/10"
+          >
+            Modifier
+          </Btn>
         </div>
       </Panel>
 
       <div className="mb-5 flex gap-2 overflow-x-auto">
         {["publications", "à propos", "connexions", "contributions", "parcours"].map((item) => (
-          <Chip key={item} active={tab === item} onClick={() => setTab(item)}>{item}</Chip>
+          <Chip key={item} active={tab === item} onClick={() => setTab(item)}>
+            {item}
+          </Chip>
         ))}
       </div>
 
@@ -257,12 +492,23 @@ export function ProfilPage() {
             <div className="flex items-start gap-3">
               <Monogram name={profil.pseudo} imageUrl={profil.avatarUrl} size={40} />
               <div className="flex-1">
-                <p className="text-[14px] text-umber-soft">Publiez une pensée, une question ou une contribution depuis le fil.</p>
-                <Btn to="/accueil" className="mt-3">Publier depuis le fil</Btn>
+                <p className="text-[14px] text-umber-soft">
+                  Publiez une pensée, une question ou une contribution depuis le fil.
+                </p>
+                <Btn to="/accueil" className="mt-3">
+                  Publier depuis le fil
+                </Btn>
               </div>
             </div>
           </Panel>
-          {ownPosts.length ? ownPosts.map((post, index) => <PostCard key={post.id} post={post} index={index} />) : <Empty titre="Aucune publication personnelle" texte="Vos publications apparaîtront ici." />}
+          {ownPosts.length ? (
+            ownPosts.map((post, index) => <PostCard key={post.id} post={post} index={index} />)
+          ) : (
+            <Empty
+              titre="Aucune publication personnelle"
+              texte="Vos publications apparaîtront ici."
+            />
+          )}
         </>
       )}
       {tab !== "publications" && (
@@ -297,13 +543,29 @@ export function ServicesPage() {
             key={service.slug}
             to="/services/$slug"
             params={{ slug: service.slug }}
-            className={cn("animate-rise p-5 transition-transform hover:-translate-y-0.5", index === 0 ? "bg-forest text-ivory" : "bg-card carved")}
+            className={cn(
+              "animate-rise p-5 transition-transform hover:-translate-y-0.5",
+              index === 0 ? "bg-forest text-ivory" : "bg-card carved",
+            )}
             style={{ animationDelay: `${index * 50}ms` }}
           >
-            <Kicker className={index === 0 ? "text-brass" : undefined}>Service {String(index + 1).padStart(2, "0")}</Kicker>
-            <h2 className="mt-3 font-display text-[28px] uppercase leading-none">{service.titre}</h2>
-            <p className={cn("mt-3 text-[13px] leading-relaxed", index === 0 ? "text-ivory/75" : "text-umber-soft")}>{service.description}</p>
-            <span className={cn("label-mono mt-5 block", index === 0 ? "text-brass" : "text-clay")}>Ouvrir →</span>
+            <Kicker className={index === 0 ? "text-brass" : undefined}>
+              Service {String(index + 1).padStart(2, "0")}
+            </Kicker>
+            <h2 className="mt-3 font-display text-[28px] uppercase leading-none">
+              {service.titre}
+            </h2>
+            <p
+              className={cn(
+                "mt-3 text-[13px] leading-relaxed",
+                index === 0 ? "text-ivory/75" : "text-umber-soft",
+              )}
+            >
+              {service.description}
+            </p>
+            <span className={cn("label-mono mt-5 block", index === 0 ? "text-brass" : "text-clay")}>
+              Ouvrir →
+            </span>
           </Link>
         ))}
       </div>
@@ -313,18 +575,41 @@ export function ServicesPage() {
 
 export function ServiceDetailPage({ slug }: { slug: string }) {
   const copy = serviceCopy[slug] ?? serviceCopy.consultation;
-  const formules = slug === "etude" ? formulesEtude : slug === "accompagnement" ? formulesAccompagnement : formulesConsultation;
+  const formules =
+    slug === "etude"
+      ? formulesEtude
+      : slug === "accompagnement"
+        ? formulesAccompagnement
+        : formulesConsultation;
   const [sent, setSent] = useState(false);
 
   return (
     <Shell>
-      <PageTitle kicker={copy.kicker} action={<Btn to="/services" variant="ghost">Services</Btn>}>{copy.title}</PageTitle>
+      <PageTitle
+        kicker={copy.kicker}
+        action={
+          <Btn to="/services" variant="ghost">
+            Services
+          </Btn>
+        }
+      >
+        {copy.title}
+      </PageTitle>
       <div className="grid gap-4 md:grid-cols-3">
         {formules.map((formule) => (
           <Panel key={formule.nom} tone={formule.recommande ? "forest" : "paper"}>
-            <Kicker className={formule.recommande ? "text-brass" : undefined}>{formule.recommande ? "Recommandé" : "Formule"}</Kicker>
+            <Kicker className={formule.recommande ? "text-brass" : undefined}>
+              {formule.recommande ? "Recommandé" : "Formule"}
+            </Kicker>
             <h2 className="mt-3 font-display text-[25px] uppercase leading-none">{formule.nom}</h2>
-            <p className={cn("mt-3 text-[13px]", formule.recommande ? "text-ivory/75" : "text-umber-soft")}>{"delai" in formule ? formule.delai : formule.suivi}</p>
+            <p
+              className={cn(
+                "mt-3 text-[13px]",
+                formule.recommande ? "text-ivory/75" : "text-umber-soft",
+              )}
+            >
+              {"delai" in formule ? formule.delai : formule.suivi}
+            </p>
             <p className="mt-4 font-semibold">{formule.prix}</p>
           </Panel>
         ))}
@@ -338,12 +623,27 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
           }}
           className="grid gap-3 sm:grid-cols-2"
         >
-          <Field label="Objet"><input className={inputCls} placeholder="Votre préoccupation" /></Field>
-          <Field label="Délai"><input className={inputCls} placeholder="Standard, prioritaire…" /></Field>
-          <Field label="Détails"><textarea className={cn(inputCls, "min-h-28 sm:col-span-2")} placeholder="Décrivez la demande…" /></Field>
+          <Field label="Objet">
+            <input className={inputCls} placeholder="Votre préoccupation" />
+          </Field>
+          <Field label="Délai">
+            <input className={inputCls} placeholder="Standard, prioritaire…" />
+          </Field>
+          <Field label="Détails">
+            <textarea
+              className={cn(inputCls, "min-h-28 sm:col-span-2")}
+              placeholder="Décrivez la demande…"
+            />
+          </Field>
           <div className="sm:col-span-2">
-            <Btn type="submit" className="mt-1">Envoyer la demande</Btn>
-            {sent && <p className="mt-3 text-[13px] text-umber-soft">Votre demande est enregistrée dans le suivi.</p>}
+            <Btn type="submit" className="mt-1">
+              Envoyer la demande
+            </Btn>
+            {sent && (
+              <p className="mt-3 text-[13px] text-umber-soft">
+                Votre demande est enregistrée dans le suivi.
+              </p>
+            )}
           </div>
         </form>
       </Panel>
@@ -355,10 +655,21 @@ export function SigneDetailPage({ slug }: { slug: string }) {
   const signe = signes.find((item) => item.slug === slug) ?? signes[0];
   return (
     <Shell>
-      <PageTitle kicker={signe.numero} action={<Btn to="/fa" variant="ghost">Retour</Btn>}>{signe.nom}</PageTitle>
+      <PageTitle
+        kicker={signe.numero}
+        action={
+          <Btn to="/fa" variant="ghost">
+            Retour
+          </Btn>
+        }
+      >
+        {signe.nom}
+      </PageTitle>
       <Panel tone="forest" className="mb-5">
         <p className="font-display text-[28px] uppercase leading-none">{signe.soustitre}</p>
-        <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-ivory/75">{signe.presentation}</p>
+        <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-ivory/75">
+          {signe.presentation}
+        </p>
       </Panel>
       <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
         <Panel>
@@ -373,7 +684,10 @@ export function SigneDetailPage({ slug }: { slug: string }) {
             <Kicker>Correspondances</Kicker>
             <div className="mt-3 space-y-2">
               {signe.correspondances.map((item) => (
-                <div key={item.cle} className="flex justify-between border-b border-umber/10 py-2 text-[13px]">
+                <div
+                  key={item.cle}
+                  className="flex justify-between border-b border-umber/10 py-2 text-[13px]"
+                >
                   <span className="text-umber-soft">{item.cle}</span>
                   <strong>{item.valeur}</strong>
                 </div>
@@ -383,7 +697,9 @@ export function SigneDetailPage({ slug }: { slug: string }) {
           <Panel>
             <Kicker>Variantes</Kicker>
             <ul className="mt-3 space-y-2 text-[13px] leading-relaxed text-umber-soft">
-              {signe.variantes.map((item) => <li key={item}>• {item}</li>)}
+              {signe.variantes.map((item) => (
+                <li key={item}>• {item}</li>
+              ))}
             </ul>
           </Panel>
         </div>
@@ -398,8 +714,16 @@ export function RecherchePage() {
     const query = q.toLowerCase();
     return [
       ...signes.map((s) => ({ title: s.nom, text: s.soustitre, to: `/fa/${s.slug}` })),
-      ...membres.map((m) => ({ title: m.pseudo, text: `${m.signe} · ${m.connexions} connexions`, to: "/reseau" })),
-      ...mockServices.map((s) => ({ title: s.titre, text: s.description, to: `/services/${s.slug}` })),
+      ...membres.map((m) => ({
+        title: m.pseudo,
+        text: `${m.signe} · ${m.connexions} connexions`,
+        to: "/reseau",
+      })),
+      ...mockServices.map((s) => ({
+        title: s.titre,
+        text: s.description,
+        to: `/services/${s.slug}`,
+      })),
     ].filter((item) => `${item.title} ${item.text}`.toLowerCase().includes(query));
   }, [q]);
   return (
@@ -408,12 +732,21 @@ export function RecherchePage() {
       <Panel tone="deep" className="mb-5">
         <div className="flex items-center gap-2">
           <Search className="size-4 text-umber-soft" />
-          <input className="w-full bg-transparent text-[15px] outline-none" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Signe, membre, service…" />
+          <input
+            className="w-full bg-transparent text-[15px] outline-none"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Signe, membre, service…"
+          />
         </div>
       </Panel>
       <div className="space-y-3">
         {(q.trim() ? results : results.slice(0, 8)).map((item) => (
-          <Link key={`${item.to}-${item.title}`} to={item.to as never} className="block bg-card carved p-4 transition-colors hover:bg-ivory-deep/40">
+          <Link
+            key={`${item.to}-${item.title}`}
+            to={item.to as never}
+            className="block bg-card carved p-4 transition-colors hover:bg-ivory-deep/40"
+          >
             <p className="font-semibold">{item.title}</p>
             <p className="mt-1 text-[13px] text-umber-soft">{item.text}</p>
           </Link>
@@ -436,12 +769,27 @@ export function ContribuerPage() {
           }}
           className="grid gap-4 sm:grid-cols-2"
         >
-          <Field label="Signe concerné"><input className={inputCls} placeholder="Ex. Gbé Mêdji" /></Field>
-          <Field label="Catégorie"><input className={inputCls} placeholder="Enseignement, variante, interdit…" /></Field>
-          <Field label="Contribution"><textarea className={cn(inputCls, "min-h-36 sm:col-span-2")} placeholder="Décrivez l'information à faire relire." /></Field>
+          <Field label="Signe concerné">
+            <input className={inputCls} placeholder="Ex. Gbé Mêdji" />
+          </Field>
+          <Field label="Catégorie">
+            <input className={inputCls} placeholder="Enseignement, variante, interdit…" />
+          </Field>
+          <Field label="Contribution">
+            <textarea
+              className={cn(inputCls, "min-h-36 sm:col-span-2")}
+              placeholder="Décrivez l'information à faire relire."
+            />
+          </Field>
           <div className="sm:col-span-2">
-            <Btn type="submit" className="mt-1">Soumettre à validation</Btn>
-            {sent && <p className="mt-3 text-[13px] text-umber-soft">Contribution reçue. Elle apparaît dans le circuit de validation.</p>}
+            <Btn type="submit" className="mt-1">
+              Soumettre à validation
+            </Btn>
+            {sent && (
+              <p className="mt-3 text-[13px] text-umber-soft">
+                Contribution reçue. Elle apparaît dans le circuit de validation.
+              </p>
+            )}
           </div>
         </form>
       </Panel>
@@ -455,12 +803,18 @@ export function DossierPage() {
     <Shell>
       <PageTitle kicker="Dossier Fa personnel">Votre espace privé</PageTitle>
       <div className="grid gap-4 sm:grid-cols-2">
-        {["Signe Fa", "Initiation", "Consultations", "Études", "Interventions", "Documents"].map((item) => (
-          <Panel key={item}>
-            <Kicker>{item}</Kicker>
-            <p className="mt-3 text-[14px] text-umber-soft">{item === "Signe Fa" ? profil.signe : "Informations à compléter depuis votre espace."}</p>
-          </Panel>
-        ))}
+        {["Signe Fa", "Initiation", "Consultations", "Études", "Interventions", "Documents"].map(
+          (item) => (
+            <Panel key={item}>
+              <Kicker>{item}</Kicker>
+              <p className="mt-3 text-[14px] text-umber-soft">
+                {item === "Signe Fa"
+                  ? profil.signe
+                  : "Informations à compléter depuis votre espace."}
+              </p>
+            </Panel>
+          ),
+        )}
       </div>
     </Shell>
   );
@@ -486,7 +840,10 @@ export function CarnetPage() {
 export function NotificationsPage() {
   const { notifications } = useApp();
   const [filter, setFilter] = useState<"all" | "unread">("all");
-  const shown = filter === "unread" ? notifications.filter((notification) => notification.nonLue) : notifications;
+  const shown =
+    filter === "unread"
+      ? notifications.filter((notification) => notification.nonLue)
+      : notifications;
   const unread = notifications.filter((notification) => notification.nonLue).length;
   const destination = {
     connexion: "/reseau",
@@ -500,13 +857,23 @@ export function NotificationsPage() {
     <Shell>
       <PageTitle
         kicker="Notifications"
-        action={unread > 0 && <Btn variant="ghost" onClick={actions.toutLireNotifications}>Tout lire</Btn>}
+        action={
+          unread > 0 && (
+            <Btn variant="ghost" onClick={actions.toutLireNotifications}>
+              Tout lire
+            </Btn>
+          )
+        }
       >
         Activité récente
       </PageTitle>
       <div className="mb-5 flex gap-2 overflow-x-auto">
-        <Chip active={filter === "all"} onClick={() => setFilter("all")}>Toutes</Chip>
-        <Chip active={filter === "unread"} onClick={() => setFilter("unread")}>Non lues {unread > 0 ? `(${unread})` : ""}</Chip>
+        <Chip active={filter === "all"} onClick={() => setFilter("all")}>
+          Toutes
+        </Chip>
+        <Chip active={filter === "unread"} onClick={() => setFilter("unread")}>
+          Non lues {unread > 0 ? `(${unread})` : ""}
+        </Chip>
       </div>
       <div className="space-y-3">
         {shown.map((notification) => (
@@ -517,21 +884,35 @@ export function NotificationsPage() {
             onClick={() => actions.lireNotification(notification.id)}
             className="block"
           >
-            <Panel tone={notification.nonLue ? "deep" : "paper"} className="transition-transform hover:-translate-y-0.5">
+            <Panel
+              tone={notification.nonLue ? "deep" : "paper"}
+              className="transition-transform hover:-translate-y-0.5"
+            >
               <div className="flex items-start gap-3">
-                <span className={cn("mt-0.5 grid size-8 shrink-0 place-items-center rounded-full", notification.nonLue ? "bg-clay text-ivory" : "bg-ivory-deep text-umber-soft")}>
+                <span
+                  className={cn(
+                    "mt-0.5 grid size-8 shrink-0 place-items-center rounded-full",
+                    notification.nonLue ? "bg-clay text-ivory" : "bg-ivory-deep text-umber-soft",
+                  )}
+                >
                   <Bell className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[14px] font-medium">{notification.texte}</p>
-                  <p className="label-mono mt-1 text-umber-soft">{notification.heure} · {notification.type}</p>
+                  <p className="label-mono mt-1 text-umber-soft">
+                    {notification.heure} · {notification.type}
+                  </p>
                 </div>
-                {notification.nonLue && <span className="mt-2 size-2 rounded-full bg-clay" aria-hidden />}
+                {notification.nonLue && (
+                  <span className="mt-2 size-2 rounded-full bg-clay" aria-hidden />
+                )}
               </div>
             </Panel>
           </Link>
         ))}
-        {shown.length === 0 && <Empty titre="Aucune notification" texte="Les nouvelles activités apparaîtront ici." />}
+        {shown.length === 0 && (
+          <Empty titre="Aucune notification" texte="Les nouvelles activités apparaîtront ici." />
+        )}
       </div>
     </Shell>
   );
@@ -560,10 +941,12 @@ export function ParametresPage() {
     const patch = { pseudo, miseEnRelation: relation, avatarUrl, coverUrl };
     actions.majProfil(patch);
     try {
-      await updateProfileMedia({ avatarUrl, coverUrl });
+      await updateProfileSettings({ pseudo, miseEnRelation: relation, avatarUrl, coverUrl });
       setStatus("Profil enregistré.");
     } catch {
-      setStatus("Profil enregistré sur cet appareil. La sauvegarde distante sera réessayée plus tard.");
+      setStatus(
+        "Profil enregistré sur cet appareil. La sauvegarde distante sera réessayée plus tard.",
+      );
     }
   }
 
@@ -572,26 +955,62 @@ export function ParametresPage() {
       <PageTitle kicker="Confidentialité">Réglages du profil</PageTitle>
       <Panel>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Pseudonyme"><input className={inputCls} value={pseudo} onChange={(e) => setPseudo(e.target.value)} /></Field>
-          <Field label="Visibilité du signe"><select className={inputCls}><option>Membres du même signe</option><option>Connexions uniquement</option><option>Moi uniquement</option></select></Field>
+          <Field label="Pseudonyme">
+            <input
+              className={inputCls}
+              value={pseudo}
+              onChange={(e) => setPseudo(e.target.value)}
+            />
+          </Field>
+          <Field label="Visibilité du signe">
+            <select className={inputCls}>
+              <option>Membres du même signe</option>
+              <option>Connexions uniquement</option>
+              <option>Moi uniquement</option>
+            </select>
+          </Field>
           <Field label="Photo de profil">
             <div className="flex items-center gap-3">
               <Monogram name={pseudo} imageUrl={avatarUrl} size={54} />
-              <input className={inputCls} type="file" accept="image/*" onChange={(e) => void chooseProfileImage(e.target.files?.[0])} />
+              <input
+                className={inputCls}
+                type="file"
+                accept="image/*"
+                onChange={(e) => void chooseProfileImage(e.target.files?.[0])}
+              />
             </div>
           </Field>
           <Field label="Photo de couverture">
             <div className="space-y-2">
-              {coverUrl && <img src={coverUrl} alt="" className="aspect-[5/2] w-full object-cover" />}
-              <input className={inputCls} type="file" accept="image/*" onChange={(e) => void chooseCoverImage(e.target.files?.[0])} />
+              {coverUrl && (
+                <img src={coverUrl} alt="" className="aspect-[5/2] w-full object-cover" />
+              )}
+              <input
+                className={inputCls}
+                type="file"
+                accept="image/*"
+                onChange={(e) => void chooseCoverImage(e.target.files?.[0])}
+              />
             </div>
           </Field>
         </div>
-        <button onClick={() => setRelation((value) => !value)} className="mt-5 flex w-full items-center justify-between bg-ivory-deep p-4 text-left">
-          <span><strong>Mise en relation</strong><span className="mt-1 block text-[13px] text-umber-soft">Recevoir des demandes de connexion.</span></span>
-          <span className={cn("label-mono", relation ? "text-clay" : "text-umber-soft")}>{relation ? "Activée" : "Désactivée"}</span>
+        <button
+          onClick={() => setRelation((value) => !value)}
+          className="mt-5 flex w-full items-center justify-between bg-ivory-deep p-4 text-left"
+        >
+          <span>
+            <strong>Mise en relation</strong>
+            <span className="mt-1 block text-[13px] text-umber-soft">
+              Recevoir des demandes de connexion.
+            </span>
+          </span>
+          <span className={cn("label-mono", relation ? "text-clay" : "text-umber-soft")}>
+            {relation ? "Activée" : "Désactivée"}
+          </span>
         </button>
-        <Btn className="mt-4" onClick={save}>Enregistrer</Btn>
+        <Btn className="mt-4" onClick={save}>
+          Enregistrer
+        </Btn>
         {status && <p className="mt-3 text-[13px] text-umber-soft">{status}</p>}
       </Panel>
     </Shell>
@@ -610,7 +1029,14 @@ export function SuiviPage() {
         {timelineConsultation.map((item) => (
           <Panel key={item.etape} tone={item.actuel ? "deep" : "paper"}>
             <div className="flex items-center gap-3">
-              <span className={cn("grid size-8 place-items-center rounded-full", item.fait ? "bg-clay text-ivory" : "bg-ivory-deep text-umber-soft")}>{item.fait ? <Check className="size-4" /> : "•"}</span>
+              <span
+                className={cn(
+                  "grid size-8 place-items-center rounded-full",
+                  item.fait ? "bg-clay text-ivory" : "bg-ivory-deep text-umber-soft",
+                )}
+              >
+                {item.fait ? <Check className="size-4" /> : "•"}
+              </span>
               <div>
                 <p className="font-semibold">{item.etape}</p>
                 <p className="label-mono text-umber-soft">{item.date}</p>
@@ -629,12 +1055,19 @@ export function AccompagnementPage() {
       <PageTitle kicker="Mon accompagnement">Suivi personnel</PageTitle>
       <Panel tone="forest" className="mb-5">
         <p className="font-display text-[30px] uppercase leading-none">Formule 6 mois</p>
-        <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-ivory/75">Suivi actif, questions incluses et compte rendu mensuel.</p>
+        <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-ivory/75">
+          Suivi actif, questions incluses et compte rendu mensuel.
+        </p>
       </Panel>
       <div className="grid gap-4 sm:grid-cols-3">
-        {["15 questions incluses", "2 comptes rendus mensuels", "1 étude de signe offerte"].map((item) => (
-          <Panel key={item}><Kicker>Inclus</Kicker><p className="mt-2 font-semibold">{item}</p></Panel>
-        ))}
+        {["15 questions incluses", "2 comptes rendus mensuels", "1 étude de signe offerte"].map(
+          (item) => (
+            <Panel key={item}>
+              <Kicker>Inclus</Kicker>
+              <p className="mt-2 font-semibold">{item}</p>
+            </Panel>
+          ),
+        )}
       </div>
     </Shell>
   );
@@ -650,8 +1083,14 @@ export function AdminPage() {
         <Stat title="Partenaires" value={String(partenaires.length)} />
       </div>
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <AdminList title="Consultations en cours" rows={consultationsAdmin.map((item) => `${item.ref} · ${item.user} · ${item.statut}`)} />
-        <AdminList title="Contributions en attente" rows={contributionsAdmin.map((item) => `${item.id} · ${item.membre} · ${item.statut}`)} />
+        <AdminList
+          title="Consultations en cours"
+          rows={consultationsAdmin.map((item) => `${item.ref} · ${item.user} · ${item.statut}`)}
+        />
+        <AdminList
+          title="Contributions en attente"
+          rows={contributionsAdmin.map((item) => `${item.id} · ${item.membre} · ${item.statut}`)}
+        />
       </div>
     </Shell>
   );
@@ -664,12 +1103,18 @@ export function RapportPage() {
       <div className="grid gap-4 lg:grid-cols-[0.9fr_1fr]">
         <div className="space-y-4">
           {avisPraticiens.map((avis) => (
-            <Panel key={avis.ref}><Kicker>{avis.ref}</Kicker><h2 className="mt-2 font-semibold">{avis.titre}</h2><p className="mt-2 text-[13px] leading-relaxed text-umber-soft">{avis.texte}</p></Panel>
+            <Panel key={avis.ref}>
+              <Kicker>{avis.ref}</Kicker>
+              <h2 className="mt-2 font-semibold">{avis.titre}</h2>
+              <p className="mt-2 text-[13px] leading-relaxed text-umber-soft">{avis.texte}</p>
+            </Panel>
           ))}
         </div>
         <Panel tone="deep">
           <SectionHeader icon={BookOpen} title="Synthèse" />
-          {syntheseRapport.map((bloc) => <ListBlock key={bloc.titre} title={bloc.titre} items={bloc.items} />)}
+          {syntheseRapport.map((bloc) => (
+            <ListBlock key={bloc.titre} title={bloc.titre} items={bloc.items} />
+          ))}
         </Panel>
       </div>
     </Shell>
@@ -685,19 +1130,51 @@ function SectionHeader({ icon: Icon, title }: { icon: typeof Users; title: strin
   );
 }
 
-function MemberRow({ name, meta, children, active }: { name: string; meta: string; children: ReactNode; active?: boolean }) {
+function MemberRow({
+  name,
+  meta,
+  children,
+  active,
+}: {
+  name: string;
+  meta: string;
+  children: ReactNode;
+  active?: boolean;
+}) {
   return (
-    <div className={cn("flex flex-col gap-3 bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center", active && "outline outline-1 outline-clay/30")}>
+    <div
+      className={cn(
+        "flex flex-col gap-3 bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center",
+        active && "outline outline-1 outline-clay/30",
+      )}
+    >
       <div className="flex min-w-0 items-center gap-3">
         <Monogram name={name} size={38} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[14px] font-semibold">{name}</p>
-          <p className="label-mono mt-1 whitespace-normal leading-relaxed text-umber-soft">{meta}</p>
+          <p className="label-mono mt-1 whitespace-normal leading-relaxed text-umber-soft">
+            {meta}
+          </p>
         </div>
       </div>
-      <div className="flex flex-wrap gap-2 sm:ml-auto">
-        {children}
+      <div className="flex flex-wrap gap-2 sm:ml-auto">{children}</div>
+    </div>
+  );
+}
+
+function RemoteMemberRow({ member, children }: { member: NetworkMember; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div className="flex min-w-0 items-center gap-3">
+        <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={38} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[14px] font-semibold">{member.pseudo}</p>
+          <p className="label-mono mt-1 whitespace-normal leading-relaxed text-umber-soft">
+            {member.signe}
+          </p>
+        </div>
       </div>
+      <div className="flex flex-wrap gap-2 sm:ml-auto">{children}</div>
     </div>
   );
 }
@@ -707,7 +1184,9 @@ function ListBlock({ title, items }: { title: string; items: string[] }) {
     <div className="mt-5">
       <Kicker>{title}</Kicker>
       <ul className="mt-3 space-y-2 text-[13px] leading-relaxed text-umber-soft">
-        {items.map((item) => <li key={item}>• {item}</li>)}
+        {items.map((item) => (
+          <li key={item}>• {item}</li>
+        ))}
       </ul>
     </div>
   );
@@ -727,7 +1206,11 @@ function AdminList({ title, rows }: { title: string; rows: string[] }) {
     <Panel>
       <Kicker>{title}</Kicker>
       <div className="mt-3 space-y-2">
-        {rows.map((row) => <p key={row} className="bg-ivory-deep/50 p-3 text-[13px]">{row}</p>)}
+        {rows.map((row) => (
+          <p key={row} className="bg-ivory-deep/50 p-3 text-[13px]">
+            {row}
+          </p>
+        ))}
       </div>
     </Panel>
   );

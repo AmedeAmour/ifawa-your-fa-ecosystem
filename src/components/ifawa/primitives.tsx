@@ -17,9 +17,7 @@ export function Logo({ className, mark = true }: { className?: string; mark?: bo
 }
 
 export function Kicker({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <p className={cn("label-mono text-clay", className)}>{children}</p>
-  );
+  return <p className={cn("label-mono text-clay", className)}>{children}</p>;
 }
 
 export function PageTitle({
@@ -89,13 +87,30 @@ export function Monogram({
   return (
     <span
       className={cn(
-        "grid shrink-0 place-items-center rounded-full font-display leading-none text-ivory",
+        "grid shrink-0 place-items-center overflow-hidden rounded-full font-display leading-none text-ivory",
         bg,
       )}
-      style={{ width: size, height: size, fontSize: size * 0.38 }}
+      style={{
+        width: size,
+        height: size,
+        minWidth: size,
+        minHeight: size,
+        maxWidth: size,
+        maxHeight: size,
+        aspectRatio: "1 / 1",
+        fontSize: size * 0.38,
+      }}
       aria-hidden
     >
-      {imageUrl ? <img src={imageUrl} alt="" className="size-full rounded-full object-cover" /> : letters}
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt=""
+          className="block size-full aspect-square rounded-full object-cover"
+        />
+      ) : (
+        letters
+      )}
     </span>
   );
 }
@@ -197,7 +212,9 @@ export function Empty({ titre, texte }: { titre: string; texte: string }) {
   return (
     <div className="carved bg-ivory-deep/40 p-10 text-center">
       <p className="font-display text-[20px] uppercase tracking-tight">{titre}</p>
-      <p className="mx-auto mt-2 max-w-[36ch] text-[13px] leading-relaxed text-umber-soft">{texte}</p>
+      <p className="mx-auto mt-2 max-w-[36ch] text-[13px] leading-relaxed text-umber-soft">
+        {texte}
+      </p>
     </div>
   );
 }

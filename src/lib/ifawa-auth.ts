@@ -11,8 +11,7 @@ export type OnboardingDraft = Partial<Profil> & {
 };
 
 export type AuthResult =
-  | { status: "signed-in"; user: User }
-  | { status: "confirmation-required"; user: User | null };
+  { status: "signed-in"; user: User } | { status: "confirmation-required"; user: User | null };
 
 const pendingDraftKey = "ifawa.pending-onboarding";
 
@@ -41,7 +40,7 @@ function satisfactionScore(value?: string) {
     Satisfait: 4,
     "Très satisfait": 5,
   };
-  return value ? scores[value] ?? null : null;
+  return value ? (scores[value] ?? null) : null;
 }
 
 function signSlug(value?: string) {
@@ -88,7 +87,8 @@ function metadataDraft(user: User): OnboardingDraft | null {
 export async function createOrUpdateProfile(user: User, draft: OnboardingDraft) {
   if (!supabase) throw new Error("La connexion à la plateforme n'est pas configurée.");
 
-  const username = draft.username ?? normalizeUsername(draft.pseudo, user.email?.split("@")[0] ?? "membre");
+  const username =
+    draft.username ?? normalizeUsername(draft.pseudo, user.email?.split("@")[0] ?? "membre");
   const displayName = draft.pseudo?.trim() || username;
   const path = pathFromDraft(draft);
 
@@ -134,7 +134,11 @@ export async function createOrUpdateProfile(user: User, draft: OnboardingDraft) 
   }
 }
 
-export async function signUpWithOnboarding(email: string, password: string, draft: OnboardingDraft): Promise<AuthResult> {
+export async function signUpWithOnboarding(
+  email: string,
+  password: string,
+  draft: OnboardingDraft,
+): Promise<AuthResult> {
   if (!supabase) throw new Error("La connexion à la plateforme n'est pas configurée.");
 
   const cleanEmail = email.trim().toLowerCase();
@@ -215,24 +219,32 @@ export async function loadCurrentProfile(): Promise<Partial<Profil> | null> {
     miseEnRelation: profile.relation_enabled,
     signe: sign?.name ?? undefined,
     annee: details?.initiation_year ? String(details.initiation_year) : undefined,
-    satisfaction: details?.satisfaction_score ? satisfactionByScore[details.satisfaction_score] : undefined,
+    satisfaction: details?.satisfaction_score
+      ? satisfactionByScore[details.satisfaction_score]
+      : undefined,
     temoignage: details?.experience_text ?? undefined,
   };
 }
 
-export async function updateProfileMedia(media: Pick<Profil, "avatarUrl" | "coverUrl">) {
+export async function updateProfileSettings(
+  profile: Pick<Profil, "pseudo" | "miseEnRelation" | "avatarUrl" | "coverUrl">,
+) {
   if (!supabase) return;
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return;
   const { error } = await supabase
     .from("profiles")
     .update({
-      avatar_url: media.avatarUrl ?? null,
-      cover_url: media.coverUrl ?? null,
+      display_name: profile.pseudo.trim(),
+      avatar_url: profile.avatarUrl ?? null,
+      cover_url: profile.coverUrl ?? null,
+      relation_enabled: profile.miseEnRelation,
     })
     .eq("id", userData.user.id);
   if (error) throw error;
 }
+
+export const updateProfileMedia = updateProfileSettings;
 
 export async function signOut() {
   if (!supabase) return;

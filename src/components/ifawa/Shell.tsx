@@ -39,25 +39,21 @@ const sideExtra = [
   { to: "/admin", label: "Administration", icon: Shield },
 ] as const;
 
-export function Shell({
-  children,
-  right,
-}: {
-  children: ReactNode;
-  right?: ReactNode;
-}) {
+export function Shell({ children, right }: { children: ReactNode; right?: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const { profil, notifications } = useApp();
-  const nonLues = notifications.filter((n) => n.nonLue).length;
   const [connected, setConnected] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const nonLues = authChecked ? notifications.filter((n) => n.nonLue).length : 0;
 
   useEffect(() => {
+    actions.hydratePersistedState();
     let alive = true;
     getCurrentUser().then((user) => {
       if (!alive) return;
       setConnected(Boolean(user));
+      actions.setCurrentUserId(user?.id);
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
       if (alive && user) {
@@ -68,6 +64,7 @@ export function Shell({
     });
     const unsubscribe = onAuthUserChange((user) => {
       setConnected(Boolean(user));
+      actions.setCurrentUserId(user?.id);
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
       if (user) {
@@ -103,10 +100,16 @@ export function Shell({
             Rechercher un signe, un membre, une publication…
           </Link>
           <div className="flex items-center gap-1">
-            <Link to="/recherche" className="grid size-9 place-items-center text-umber-soft sm:hidden">
+            <Link
+              to="/recherche"
+              className="grid size-9 place-items-center text-umber-soft sm:hidden"
+            >
               <Search className="size-4.5" />
             </Link>
-            <Link to="/notifications" className="relative grid size-9 place-items-center text-umber-soft hover:text-clay">
+            <Link
+              to="/notifications"
+              className="relative grid size-9 place-items-center text-umber-soft hover:text-clay"
+            >
               <Bell className="size-4.5" />
               {nonLues > 0 && (
                 <span className="absolute right-1.5 top-1.5 grid size-4 place-items-center rounded-full bg-clay font-mono text-[8px] text-ivory">
@@ -117,7 +120,12 @@ export function Shell({
             {connected ? (
               <>
                 <Link to="/profil" className="ml-1">
-                  <Monogram name={profil.pseudo} imageUrl={profil.avatarUrl} size={40} tone="umber" />
+                  <Monogram
+                    name={profil.pseudo}
+                    imageUrl={profil.avatarUrl}
+                    size={40}
+                    tone="umber"
+                  />
                 </Link>
                 <button
                   type="button"
@@ -152,25 +160,25 @@ export function Shell({
           </div>
         </main>
       ) : (
-      <div className="mx-auto flex max-w-6xl gap-6 px-4 pb-28 pt-6 lg:pb-10">
-        <aside className="hidden w-52 shrink-0 lg:block">
-          <nav className="sticky top-20 space-y-0.5">
-            {mainNav.map((n) => (
-              <SideLink key={n.to} {...n} active={pathname.startsWith(n.to)} />
-            ))}
-            <div className="my-3 h-px bg-umber/10" />
-            {sideExtra.map((n) => (
-              <SideLink key={n.to} {...n} active={pathname.startsWith(n.to)} />
-            ))}
-          </nav>
-        </aside>
+        <div className="mx-auto flex max-w-6xl gap-6 px-4 pb-28 pt-6 lg:pb-10">
+          <aside className="hidden w-52 shrink-0 lg:block">
+            <nav className="sticky top-20 space-y-0.5">
+              {mainNav.map((n) => (
+                <SideLink key={n.to} {...n} active={pathname.startsWith(n.to)} />
+              ))}
+              <div className="my-3 h-px bg-umber/10" />
+              {sideExtra.map((n) => (
+                <SideLink key={n.to} {...n} active={pathname.startsWith(n.to)} />
+              ))}
+            </nav>
+          </aside>
 
-        <main className="min-w-0 flex-1">{children}</main>
+          <main className="min-w-0 flex-1">{children}</main>
 
-        <aside className="hidden w-72 shrink-0 xl:block">
-          <div className="sticky top-20 space-y-4">{right ?? <DefaultRail />}</div>
-        </aside>
-      </div>
+          <aside className="hidden w-72 shrink-0 xl:block">
+            <div className="sticky top-20 space-y-4">{right ?? <DefaultRail />}</div>
+          </aside>
+        </div>
       )}
 
       {authChecked && connected && <BottomNav pathname={pathname} />}
@@ -248,10 +256,26 @@ function DefaultRail() {
       <Panel tone="deep">
         <Kicker className="mb-3">Raccourcis</Kicker>
         <ul className="space-y-2 text-[13px]">
-          <li><Link to="/services/consultation" className="hover:text-clay">Consultation Fa →</Link></li>
-          <li><Link to="/suivi" className="hover:text-clay">Suivre ma consultation →</Link></li>
-          <li><Link to="/accompagnement" className="hover:text-clay">Mon accompagnement →</Link></li>
-          <li><Link to="/contribuer" className="hover:text-clay">Proposer une contribution →</Link></li>
+          <li>
+            <Link to="/services/consultation" className="hover:text-clay">
+              Consultation Fa →
+            </Link>
+          </li>
+          <li>
+            <Link to="/suivi" className="hover:text-clay">
+              Suivre ma consultation →
+            </Link>
+          </li>
+          <li>
+            <Link to="/accompagnement" className="hover:text-clay">
+              Mon accompagnement →
+            </Link>
+          </li>
+          <li>
+            <Link to="/contribuer" className="hover:text-clay">
+              Proposer une contribution →
+            </Link>
+          </li>
         </ul>
       </Panel>
     </>

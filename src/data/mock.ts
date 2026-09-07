@@ -119,8 +119,7 @@ export const membres: Membre[] = [
     signe: "Yèkou Mêdji",
     annee: 2021,
     satisfaction: "Satisfait",
-    temoignage:
-      "J'ai enfin un espace pour poser mes questions sans crainte d'être jugée.",
+    temoignage: "J'ai enfin un espace pour poser mes questions sans crainte d'être jugée.",
     connexions: 39,
   },
   {
@@ -174,7 +173,9 @@ export const membres: Membre[] = [
 
 export type Post = {
   id: string;
+  authorId?: string;
   auteur: string;
+  authorAvatarUrl?: string;
   signe?: string;
   type: "Membre" | "Témoignage" | "Pédagogie" | "Officiel" | "Signe" | "Question" | "Contribution";
   heure: string;
@@ -183,9 +184,18 @@ export type Post = {
   mediaUrl?: string;
   reactions: number;
   commentaires: Commentaire[];
+  canEdit?: boolean;
 };
 
-export type Commentaire = { id: string; auteur: string; texte: string; heure: string };
+export type Commentaire = {
+  id: string;
+  authorId?: string;
+  auteur: string;
+  authorAvatarUrl?: string;
+  texte: string;
+  heure: string;
+  canDelete?: boolean;
+};
 
 export const posts: Post[] = [
   {
@@ -325,18 +335,66 @@ export type Notification = {
 };
 
 export const notifications: Notification[] = [
-  { id: "n1", texte: "@Kondo vous a envoyé une demande de connexion.", heure: "il y a 12 min", type: "connexion", nonLue: true },
-  { id: "n2", texte: "@Sègbo a commenté votre publication.", heure: "il y a 1 h", type: "commentaire", nonLue: true },
-  { id: "n3", texte: "Votre contribution a été validée.", heure: "il y a 5 h", type: "contribution", nonLue: true },
-  { id: "n4", texte: "Votre consultation est en cours de traitement.", heure: "hier", type: "service", nonLue: false },
-  { id: "n5", texte: "Votre rapport d'étude est disponible.", heure: "hier", type: "service", nonLue: false },
-  { id: "n6", texte: "Une nouvelle publication concerne votre signe.", heure: "il y a 2 j", type: "signe", nonLue: false },
+  {
+    id: "n1",
+    texte: "@Kondo vous a envoyé une demande de connexion.",
+    heure: "il y a 12 min",
+    type: "connexion",
+    nonLue: true,
+  },
+  {
+    id: "n2",
+    texte: "@Sègbo a commenté votre publication.",
+    heure: "il y a 1 h",
+    type: "commentaire",
+    nonLue: true,
+  },
+  {
+    id: "n3",
+    texte: "Votre contribution a été validée.",
+    heure: "il y a 5 h",
+    type: "contribution",
+    nonLue: true,
+  },
+  {
+    id: "n4",
+    texte: "Votre consultation est en cours de traitement.",
+    heure: "hier",
+    type: "service",
+    nonLue: false,
+  },
+  {
+    id: "n5",
+    texte: "Votre rapport d'étude est disponible.",
+    heure: "hier",
+    type: "service",
+    nonLue: false,
+  },
+  {
+    id: "n6",
+    texte: "Une nouvelle publication concerne votre signe.",
+    heure: "il y a 2 j",
+    type: "signe",
+    nonLue: false,
+  },
 ];
 
 export const demandesConnexion = [
   { id: "kondo", pseudo: "@Kondo", motif: "Même signe que vous", signe: "Gbé Mêdji", annee: 2019 },
-  { id: "afiavi", pseudo: "@Afiavi", motif: "Suggestion de la communauté", signe: "Losso Mêdji", annee: 2022 },
-  { id: "noukpo", pseudo: "@Noukpo", motif: "Membre actif de la bibliothèque", signe: "Fu Mêdji", annee: 2020 },
+  {
+    id: "afiavi",
+    pseudo: "@Afiavi",
+    motif: "Suggestion de la communauté",
+    signe: "Losso Mêdji",
+    annee: 2022,
+  },
+  {
+    id: "noukpo",
+    pseudo: "@Noukpo",
+    motif: "Membre actif de la bibliothèque",
+    signe: "Fu Mêdji",
+    annee: 2020,
+  },
 ];
 
 export const services = [
@@ -367,21 +425,77 @@ export const services = [
 ];
 
 export const formulesConsultation = [
-  { nom: "Standard", delai: "Jusqu'à 72 h", prix: "15 000 F", points: ["Retour écrit", "1 question de suivi", "Historique conservé"] },
-  { nom: "Prioritaire", delai: "Jusqu'à 24 h", prix: "28 000 F", points: ["Retour écrit détaillé", "3 questions de suivi", "Traitement accéléré"], recommande: true },
-  { nom: "Express", delai: "Traitement prioritaire", prix: "45 000 F", points: ["Retour approfondi", "Questions illimitées 7 j", "Interlocuteur dédié"] },
+  {
+    nom: "Standard",
+    delai: "Jusqu'à 72 h",
+    prix: "15 000 F",
+    points: ["Retour écrit", "1 question de suivi", "Historique conservé"],
+  },
+  {
+    nom: "Prioritaire",
+    delai: "Jusqu'à 24 h",
+    prix: "28 000 F",
+    points: ["Retour écrit détaillé", "3 questions de suivi", "Traitement accéléré"],
+    recommande: true,
+  },
+  {
+    nom: "Express",
+    delai: "Traitement prioritaire",
+    prix: "45 000 F",
+    points: ["Retour approfondi", "Questions illimitées 7 j", "Interlocuteur dédié"],
+  },
 ];
 
 export const formulesEtude = [
-  { nom: "3 praticiens", delai: "10 jours", rapport: "Rapport comparatif simple", prix: "60 000 F" },
-  { nom: "5 praticiens", delai: "15 jours", rapport: "Rapport comparatif étendu", prix: "95 000 F", recommande: true },
-  { nom: "7 praticiens", delai: "21 jours", rapport: "Rapport comparatif complet + synthèse", prix: "140 000 F" },
+  {
+    nom: "3 praticiens",
+    delai: "10 jours",
+    rapport: "Rapport comparatif simple",
+    prix: "60 000 F",
+  },
+  {
+    nom: "5 praticiens",
+    delai: "15 jours",
+    rapport: "Rapport comparatif étendu",
+    prix: "95 000 F",
+    recommande: true,
+  },
+  {
+    nom: "7 praticiens",
+    delai: "21 jours",
+    rapport: "Rapport comparatif complet + synthèse",
+    prix: "140 000 F",
+  },
 ];
 
 export const formulesAccompagnement = [
-  { nom: "3 mois", questions: "6 questions incluses", suivi: "1 compte rendu mensuel", avantages: ["Dossier Fa personnel", "Carnet de parcours"], prix: "75 000 F" },
-  { nom: "6 mois", questions: "15 questions incluses", suivi: "2 comptes rendus mensuels", avantages: ["Dossier Fa personnel", "Carnet de parcours", "1 étude de signe offerte"], prix: "135 000 F", recommande: true },
-  { nom: "12 mois", questions: "Questions illimitées", suivi: "Suivi continu", avantages: ["Dossier Fa personnel", "Carnet de parcours", "2 études de signe", "Interlocuteur dédié"], prix: "240 000 F" },
+  {
+    nom: "3 mois",
+    questions: "6 questions incluses",
+    suivi: "1 compte rendu mensuel",
+    avantages: ["Dossier Fa personnel", "Carnet de parcours"],
+    prix: "75 000 F",
+  },
+  {
+    nom: "6 mois",
+    questions: "15 questions incluses",
+    suivi: "2 comptes rendus mensuels",
+    avantages: ["Dossier Fa personnel", "Carnet de parcours", "1 étude de signe offerte"],
+    prix: "135 000 F",
+    recommande: true,
+  },
+  {
+    nom: "12 mois",
+    questions: "Questions illimitées",
+    suivi: "Suivi continu",
+    avantages: [
+      "Dossier Fa personnel",
+      "Carnet de parcours",
+      "2 études de signe",
+      "Interlocuteur dédié",
+    ],
+    prix: "240 000 F",
+  },
 ];
 
 export const timelineConsultation = [
@@ -393,48 +507,174 @@ export const timelineConsultation = [
 ];
 
 export const carnet = [
-  { date: "Septembre 2026", titre: "Initiation enregistrée", texte: "Votre signe Gbé Mêdji a été enregistré dans votre dossier." },
-  { date: "Octobre 2026", titre: "Étude approfondie", texte: "Étude à 3 praticiens commandée. Rapport disponible." },
-  { date: "Décembre 2026", titre: "Question de suivi", texte: "Question posée à votre accompagnateur, réponse reçue en 2 jours." },
-  { date: "Mars 2027", titre: "Intervention enregistrée", texte: "Intervention notée dans votre dossier Fa personnel." },
+  {
+    date: "Septembre 2026",
+    titre: "Initiation enregistrée",
+    texte: "Votre signe Gbé Mêdji a été enregistré dans votre dossier.",
+  },
+  {
+    date: "Octobre 2026",
+    titre: "Étude approfondie",
+    texte: "Étude à 3 praticiens commandée. Rapport disponible.",
+  },
+  {
+    date: "Décembre 2026",
+    titre: "Question de suivi",
+    texte: "Question posée à votre accompagnateur, réponse reçue en 2 jours.",
+  },
+  {
+    date: "Mars 2027",
+    titre: "Intervention enregistrée",
+    texte: "Intervention notée dans votre dossier Fa personnel.",
+  },
 ];
 
 export const partenaires = [
-  { id: "PR-014", nom: "Interne — Atelier Nord", zone: "Zone 1", experience: "18 ans", dispo: "Disponible", statut: "Actif", dossiers: 4 },
-  { id: "PR-027", nom: "Interne — Atelier Sud", zone: "Zone 3", experience: "11 ans", dispo: "Complet", statut: "Actif", dossiers: 9 },
-  { id: "PR-031", nom: "Interne — Atelier Est", zone: "Zone 2", experience: "24 ans", dispo: "Disponible", statut: "Actif", dossiers: 2 },
-  { id: "PR-042", nom: "Interne — Atelier Centre", zone: "Zone 1", experience: "7 ans", dispo: "En pause", statut: "Suspendu", dossiers: 0 },
+  {
+    id: "PR-014",
+    nom: "Interne — Atelier Nord",
+    zone: "Zone 1",
+    experience: "18 ans",
+    dispo: "Disponible",
+    statut: "Actif",
+    dossiers: 4,
+  },
+  {
+    id: "PR-027",
+    nom: "Interne — Atelier Sud",
+    zone: "Zone 3",
+    experience: "11 ans",
+    dispo: "Complet",
+    statut: "Actif",
+    dossiers: 9,
+  },
+  {
+    id: "PR-031",
+    nom: "Interne — Atelier Est",
+    zone: "Zone 2",
+    experience: "24 ans",
+    dispo: "Disponible",
+    statut: "Actif",
+    dossiers: 2,
+  },
+  {
+    id: "PR-042",
+    nom: "Interne — Atelier Centre",
+    zone: "Zone 1",
+    experience: "7 ans",
+    dispo: "En pause",
+    statut: "Suspendu",
+    dossiers: 0,
+  },
 ];
 
 export const consultationsAdmin = [
-  { ref: "CS-2041", user: "@Sègbo23", offre: "Prioritaire", date: "13/08", statut: "En traitement", praticien: "PR-014" },
-  { ref: "CS-2042", user: "@Ayaba", offre: "Standard", date: "13/08", statut: "En attente", praticien: "—" },
-  { ref: "CS-2043", user: "@Kondo", offre: "Express", date: "12/08", statut: "Résultat prêt", praticien: "PR-031" },
-  { ref: "CS-2044", user: "@Hounvi", offre: "Standard", date: "11/08", statut: "Terminé", praticien: "PR-027" },
-  { ref: "CS-2045", user: "@Noukpo", offre: "Prioritaire", date: "11/08", statut: "En traitement", praticien: "PR-014" },
+  {
+    ref: "CS-2041",
+    user: "@Sègbo23",
+    offre: "Prioritaire",
+    date: "13/08",
+    statut: "En traitement",
+    praticien: "PR-014",
+  },
+  {
+    ref: "CS-2042",
+    user: "@Ayaba",
+    offre: "Standard",
+    date: "13/08",
+    statut: "En attente",
+    praticien: "—",
+  },
+  {
+    ref: "CS-2043",
+    user: "@Kondo",
+    offre: "Express",
+    date: "12/08",
+    statut: "Résultat prêt",
+    praticien: "PR-031",
+  },
+  {
+    ref: "CS-2044",
+    user: "@Hounvi",
+    offre: "Standard",
+    date: "11/08",
+    statut: "Terminé",
+    praticien: "PR-027",
+  },
+  {
+    ref: "CS-2045",
+    user: "@Noukpo",
+    offre: "Prioritaire",
+    date: "11/08",
+    statut: "En traitement",
+    praticien: "PR-014",
+  },
 ];
 
 export const contributionsAdmin = [
-  { id: "CB-311", membre: "@Dada90", signe: "Gbé Mêdji", categorie: "Variante", contenu: "Variante régionale rapportée par plusieurs anciens.", date: "13/08", statut: "En attente" },
-  { id: "CB-312", membre: "@Todan", signe: "Guda Mêdji", categorie: "Enseignement", contenu: "Précision sur un enseignement transmis oralement.", date: "12/08", statut: "En attente" },
-  { id: "CB-313", membre: "@Afiavi", signe: "Losso Mêdji", categorie: "Recommandation", contenu: "Recommandation d'usage courant dans sa région.", date: "12/08", statut: "Précision demandée" },
-  { id: "CB-314", membre: "@Noukpo", signe: "Fu Mêdji", categorie: "Correspondance", contenu: "Correspondance rapportée, à croiser avec d'autres sources.", date: "10/08", statut: "En attente" },
+  {
+    id: "CB-311",
+    membre: "@Dada90",
+    signe: "Gbé Mêdji",
+    categorie: "Variante",
+    contenu: "Variante régionale rapportée par plusieurs anciens.",
+    date: "13/08",
+    statut: "En attente",
+  },
+  {
+    id: "CB-312",
+    membre: "@Todan",
+    signe: "Guda Mêdji",
+    categorie: "Enseignement",
+    contenu: "Précision sur un enseignement transmis oralement.",
+    date: "12/08",
+    statut: "En attente",
+  },
+  {
+    id: "CB-313",
+    membre: "@Afiavi",
+    signe: "Losso Mêdji",
+    categorie: "Recommandation",
+    contenu: "Recommandation d'usage courant dans sa région.",
+    date: "12/08",
+    statut: "Précision demandée",
+  },
+  {
+    id: "CB-314",
+    membre: "@Noukpo",
+    signe: "Fu Mêdji",
+    categorie: "Correspondance",
+    contenu: "Correspondance rapportée, à croiser avec d'autres sources.",
+    date: "10/08",
+    statut: "En attente",
+  },
 ];
 
 export const decouverte = [
-  { titre: "Qu'est-ce que le Fa ?", texte: "Une introduction claire, sans jargon, à ce que recouvre le Fa." },
+  {
+    titre: "Qu'est-ce que le Fa ?",
+    texte: "Une introduction claire, sans jargon, à ce que recouvre le Fa.",
+  },
   { titre: "Comprendre les signes", texte: "Comment se structurent les seize signes-mères." },
-  { titre: "Découvrir la communauté", texte: "Qui sont les membres d'Ifawa et comment ils échangent." },
-  { titre: "Explorer la bibliothèque", texte: "Parcourir les fiches et les contributions validées." },
-  { titre: "Comment se déroule une initiation ?", texte: "Les étapes, les questions fréquentes, ce qu'il faut savoir." },
+  {
+    titre: "Découvrir la communauté",
+    texte: "Qui sont les membres d'Ifawa et comment ils échangent.",
+  },
+  {
+    titre: "Explorer la bibliothèque",
+    texte: "Parcourir les fiches et les contributions validées.",
+  },
+  {
+    titre: "Comment se déroule une initiation ?",
+    texte: "Les étapes, les questions fréquentes, ce qu'il faut savoir.",
+  },
 ];
 
 export const avisPraticiens = [
   {
     titre: "Avis du praticien 1",
     ref: "PR-014",
-    texte:
-      "Le praticien relève une orientation vers la mesure et la temporisation.",
+    texte: "Le praticien relève une orientation vers la mesure et la temporisation.",
   },
   {
     titre: "Avis du praticien 2",
@@ -451,10 +691,19 @@ export const avisPraticiens = [
 ];
 
 export const syntheseRapport = [
-  { titre: "Points de forte convergence", items: ["Élément cité par les 3 praticiens.", "Second élément convergent."] },
-  { titre: "Points rapportés par plusieurs praticiens", items: ["Élément cité par 2 praticiens sur 3."] },
+  {
+    titre: "Points de forte convergence",
+    items: ["Élément cité par les 3 praticiens.", "Second élément convergent."],
+  },
+  {
+    titre: "Points rapportés par plusieurs praticiens",
+    items: ["Élément cité par 2 praticiens sur 3."],
+  },
   { titre: "Variantes", items: ["Variante régionale signalée par un seul praticien."] },
   { titre: "Divergences", items: ["Une divergence de formulation, sans opposition de fond."] },
-  { titre: "Informations particulières", items: ["Une remarque isolée à conserver dans le dossier."] },
+  {
+    titre: "Informations particulières",
+    items: ["Une remarque isolée à conserver dans le dossier."],
+  },
   { titre: "Éléments à approfondir", items: ["Deux points méritant une question de suivi."] },
 ];
