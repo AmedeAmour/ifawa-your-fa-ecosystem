@@ -31,6 +31,7 @@ export const Route = createFileRoute("/")({
 function Bienvenue() {
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
+  const [installMessage, setInstallMessage] = useState("");
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -55,10 +56,18 @@ function Bienvenue() {
   }, []);
 
   async function installApp() {
-    if (!installPrompt) return;
+    if (!installPrompt) {
+      setInstallMessage("Ouvrez Ifawa sur votre téléphone pour lancer l'installation.");
+      return;
+    }
     await installPrompt.prompt();
     const choice = await installPrompt.userChoice;
-    if (choice.outcome === "accepted") setInstalled(true);
+    if (choice.outcome === "accepted") {
+      setInstalled(true);
+      setInstallMessage("Ifawa est installée.");
+    } else {
+      setInstallMessage("");
+    }
     setInstallPrompt(null);
   }
 
@@ -142,16 +151,21 @@ function Bienvenue() {
               <p className="label-mono mb-2 text-brass">Application mobile</p>
               <h2 className="font-display text-[28px] uppercase leading-none">Installer Ifawa</h2>
               <p className="mt-2 max-w-[46ch] text-[13px] leading-relaxed text-ivory/70">
-                Installez Ifawa sur votre téléphone et accédez à votre espace comme une application.
+                Installez Ifawa sur votre téléphone pour retrouver votre espace en un geste.
               </p>
+              {installMessage ? (
+                <p className="mt-3 max-w-[42ch] text-[12px] leading-relaxed text-ivory/60">
+                  {installMessage}
+                </p>
+              ) : null}
             </div>
             <button
               type="button"
               onClick={installApp}
-              disabled={!installPrompt || installed}
+              disabled={installed}
               className="bg-clay px-4 py-3 font-mono text-[10px] uppercase tracking-[0.18em] text-ivory transition-colors hover:bg-clay/90 disabled:bg-ivory/10 disabled:text-ivory/45"
             >
-              {installed ? "Installée" : installPrompt ? "Installer" : "Disponible depuis le navigateur"}
+              {installed ? "Installée" : "Installer"}
             </button>
           </div>
         </section>
