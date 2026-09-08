@@ -144,7 +144,7 @@ export function Btn({
     quiet: "bg-ivory-deep text-umber hover:bg-ivory-deep/70",
   } as const;
   const cls = cn(
-    "inline-flex items-center justify-center gap-2 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.18em] transition-colors disabled:opacity-40",
+    "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.18em] transition-colors disabled:opacity-40",
     full && "w-full",
     variants[variant],
     className,
@@ -178,7 +178,7 @@ export function Chip({
       type="button"
       onClick={onClick}
       className={cn(
-        "whitespace-nowrap px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+        "whitespace-nowrap rounded-full px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
         active ? "bg-umber text-ivory" : "bg-ivory-deep text-umber-soft hover:bg-ivory-deep/70",
       )}
     >
@@ -206,11 +206,11 @@ export function Field({
 }
 
 export const inputCls =
-  "w-full border border-umber/15 bg-card px-3 py-2.5 text-[14px] outline-none transition-colors placeholder:text-umber-soft/50 focus:border-clay";
+  "w-full rounded-xl border border-umber/15 bg-card px-3 py-2.5 text-[14px] outline-none transition-colors placeholder:text-umber-soft/50 focus:border-clay";
 
 export function Empty({ titre, texte }: { titre: string; texte: string }) {
   return (
-    <div className="carved bg-ivory-deep/40 p-10 text-center">
+    <div className="carved rounded-2xl bg-ivory-deep/40 p-10 text-center">
       <p className="font-display text-[20px] uppercase tracking-tight">{titre}</p>
       <p className="mx-auto mt-2 max-w-[36ch] text-[13px] leading-relaxed text-umber-soft">
         {texte}

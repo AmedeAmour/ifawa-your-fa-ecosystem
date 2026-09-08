@@ -1,4 +1,5 @@
 import type { Notification, Post } from "@/data/mock";
+import { readCache, writeCache } from "./ifawa-cache";
 import type { ReactionKind } from "./store";
 import { supabase } from "./supabase";
 
@@ -62,6 +63,18 @@ export type ConversationItem = {
   heure: string;
   nonLus: number;
   messages: { id: string; de: "moi" | "eux"; texte: string; heure: string }[];
+};
+
+export type FeedPayload = {
+  posts: Post[];
+  reactions: Record<string, ReactionKind>;
+};
+
+export type NetworkPayload = {
+  received: NetworkMember[];
+  sent: NetworkMember[];
+  accepted: NetworkMember[];
+  suggestions: NetworkMember[];
 };
 
 function displayName(profile?: ProfileRow) {
@@ -202,7 +215,13 @@ export async function loadFeedFromSupabase() {
     };
   });
 
-  return { posts: mappedPosts, reactions: myReactions };
+  const payload = { posts: mappedPosts, reactions: myReactions };
+  writeCache(userId, "feed", payload);
+  return payload;
+}
+
+export function readCachedFeed(userId?: string): FeedPayload | null {
+  return readCache<FeedPayload | null>(userId, "feed", null);
 }
 
 export async function createRemotePost(text: string, type: Post["type"], mediaUrl = "") {
@@ -393,7 +412,7 @@ export async function loadNetworkFromSupabase() {
     };
   });
 
-  return {
+  const payload = {
     received: members.filter((member) => {
       const relation = connectionRows.find((item) => item.id === member.requestId);
       return relation?.addressee_id === userId && relation.status === "pending";
@@ -405,6 +424,12 @@ export async function loadNetworkFromSupabase() {
     accepted: members.filter((member) => member.status === "accepted"),
     suggestions: members.filter((member) => !member.status),
   };
+  writeCache(userId, "network", payload);
+  return payload;
+}
+
+export function readCachedNetwork(userId?: string): NetworkPayload | null {
+  return readCache<NetworkPayload | null>(userId, "network", null);
 }
 
 export async function loadMemberProfile(profileId: string): Promise<NetworkMember | null> {
@@ -565,7 +590,7 @@ export async function loadConversationsFromSupabase() {
     created_at: string;
   }>;
 
-  return myConversationIds.map((conversationId) => {
+  const payload = myConversationIds.map((conversationId) => {
     const otherMember = memberRows.find(
       (member) => member.conversation_id === conversationId && member.profile_id !== userId,
     );
@@ -589,6 +614,12 @@ export async function loadConversationsFromSupabase() {
       })),
     };
   });
+  writeCache(userId, "conversations", payload);
+  return payload;
+}
+
+export function readCachedConversations(userId?: string): ConversationItem[] | null {
+  return readCache<ConversationItem[] | null>(userId, "conversations", null);
 }
 
 export async function sendRemoteMessage(conversationId: string, text: string) {
@@ -685,5 +716,11 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
     nonLue: true,
   }));
 
-  return [...connectionNotifications, ...commentNotifications].slice(0, 50);
+  const payload = [...connectionNotifications, ...commentNotifications].slice(0, 50);
+  writeCache(userId, "notifications", payload);
+  return payload;
+}
+
+export function readCachedNotifications(userId?: string): Notification[] | null {
+  return readCache<Notification[] | null>(userId, "notifications", null);
 }

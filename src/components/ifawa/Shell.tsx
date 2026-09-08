@@ -20,7 +20,14 @@ import { Logo, Monogram, Panel, Kicker } from "./primitives";
 import { actions, useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { getCurrentUser, loadCurrentProfile, onAuthUserChange, signOut } from "@/lib/ifawa-auth";
-import { loadNotificationsFromSupabase } from "@/lib/ifawa-social";
+import { loadMyContributions } from "@/lib/ifawa-contributions";
+import { fetchServiceCatalog, loadMyServiceRequests } from "@/lib/ifawa-services";
+import {
+  loadConversationsFromSupabase,
+  loadFeedFromSupabase,
+  loadNetworkFromSupabase,
+  loadNotificationsFromSupabase,
+} from "@/lib/ifawa-social";
 
 const mainNav = [
   { to: "/accueil", label: "Accueil", icon: Home },
@@ -51,6 +58,23 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
   useEffect(() => {
     actions.hydratePersistedState();
     let alive = true;
+
+    async function warmAuthenticatedData() {
+      const [profile, notifications] = await Promise.all([
+        loadCurrentProfile().catch(() => null),
+        loadNotificationsFromSupabase().catch(() => null),
+        loadFeedFromSupabase().catch(() => null),
+        loadNetworkFromSupabase().catch(() => null),
+        loadConversationsFromSupabase().catch(() => null),
+        fetchServiceCatalog().catch(() => null),
+        loadMyServiceRequests().catch(() => null),
+        loadMyContributions().catch(() => null),
+      ]);
+      if (!alive) return;
+      if (profile) actions.majProfil(profile);
+      if (notifications) actions.remplacerNotifications(notifications);
+    }
+
     getCurrentUser().then((user) => {
       if (!alive) return;
       setConnected(Boolean(user));
@@ -58,18 +82,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       initialAuthResolved.current = true;
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
-      if (alive && user) {
-        loadCurrentProfile()
-          .then((profile) => {
-            if (profile) actions.majProfil(profile);
-          })
-          .catch(() => {});
-        loadNotificationsFromSupabase()
-          .then((items) => {
-            if (items) actions.remplacerNotifications(items);
-          })
-          .catch(() => {});
-      }
+      if (alive && user) void warmAuthenticatedData();
     });
     const unsubscribe = onAuthUserChange((user) => {
       if (!initialAuthResolved.current && !user) return;
@@ -78,18 +91,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       actions.setCurrentUserId(user?.id);
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
-      if (user) {
-        loadCurrentProfile()
-          .then((profile) => {
-            if (profile) actions.majProfil(profile);
-          })
-          .catch(() => {});
-        loadNotificationsFromSupabase()
-          .then((items) => {
-            if (items) actions.remplacerNotifications(items);
-          })
-          .catch(() => {});
-      }
+      if (user) void warmAuthenticatedData();
     });
     return () => {
       alive = false;

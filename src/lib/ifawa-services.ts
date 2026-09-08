@@ -1,4 +1,5 @@
 import { services as fallbackServices } from "@/data/mock";
+import { readCache, writeCache } from "./ifawa-cache";
 import { supabase } from "./supabase";
 
 const serviceTypeToSlug: Record<string, string> = {
@@ -47,7 +48,7 @@ export async function fetchServiceCatalog(): Promise<ServiceCard[]> {
 
   if (error || !data?.length) return fallbackServices;
 
-  return (data as ServiceCatalogRow[])
+  const services = (data as ServiceCatalogRow[])
     .map((service) => ({
       slug: serviceTypeToSlug[service.type] ?? service.type,
       titre: service.title,
@@ -57,6 +58,12 @@ export async function fetchServiceCatalog(): Promise<ServiceCard[]> {
       description: service.description,
     }))
     .filter((service) => Boolean(service.slug));
+  writeCache("global", "services", services);
+  return services;
+}
+
+export function readCachedServiceCatalog() {
+  return readCache<ServiceCard[]>("global", "services", fallbackServices);
 }
 
 export async function createServiceRequest({
@@ -120,7 +127,7 @@ export async function loadMyServiceRequests(): Promise<ServiceRequest[]> {
 
   if (error || !data) return [];
 
-  return data.map((request) => ({
+  const requests = data.map((request) => ({
     id: request.id,
     serviceType: request.service_type,
     serviceSlug: serviceTypeToSlug[request.service_type] ?? request.service_type,
@@ -142,4 +149,10 @@ export async function loadMyServiceRequests(): Promise<ServiceRequest[]> {
     status: request.status,
     createdAt: request.submitted_at ?? request.created_at,
   }));
+  writeCache(user.id, "service-requests", requests);
+  return requests;
+}
+
+export function readCachedServiceRequests(userId?: string): ServiceRequest[] {
+  return readCache<ServiceRequest[]>(userId, "service-requests", []);
 }

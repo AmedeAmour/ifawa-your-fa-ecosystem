@@ -109,7 +109,7 @@
 }
 
 :root {
-  --radius: 0.25rem;
+  --radius: 0.85rem;
 
   --ivory: oklch(0.951 0.017 84);
   --ivory-deep: oklch(0.906 0.029 88);
@@ -162,6 +162,7 @@
 }
 
 @utility carved {
+  border-radius: var(--radius-lg);
   box-shadow: 0 1px 0 0 color-mix(in oklab, var(--ivory) 60%, transparent) inset;
   outline: 1px solid var(--border);
   outline-offset: -1px;

@@ -5,7 +5,12 @@ import { Shell } from "@/components/ifawa/Shell";
 import { PostCard } from "@/components/ifawa/PostCard";
 import { Btn, Empty, Kicker, Monogram, Panel, SectionTitle } from "@/components/ifawa/primitives";
 import { actions, useApp } from "@/lib/store";
-import { createRemotePost, loadFeedFromSupabase, uploadPostMedia } from "@/lib/ifawa-social";
+import {
+  createRemotePost,
+  loadFeedFromSupabase,
+  readCachedFeed,
+  uploadPostMedia,
+} from "@/lib/ifawa-social";
 import { decouverte } from "@/data/mock";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +33,7 @@ export const Route = createFileRoute("/accueil")({
 });
 
 function Accueil() {
-  const { posts, profil } = useApp();
+  const { posts, profil, currentUserId } = useApp();
   const [texte, setTexte] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -53,8 +58,13 @@ function Accueil() {
   }
 
   useEffect(() => {
+    const cached = readCachedFeed(currentUserId);
+    if (cached) {
+      actions.remplacerPosts(cached.posts, cached.reactions);
+      setLoadingFeed(false);
+    }
     void refreshFeed();
-  }, []);
+  }, [currentUserId]);
 
   const visibles = posts.filter((p) =>
     filtre === "Tout"

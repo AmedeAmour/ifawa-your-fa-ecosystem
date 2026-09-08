@@ -1,3 +1,4 @@
+import { readCache, writeCache } from "./ifawa-cache";
 import { supabase } from "./supabase";
 
 const categoryLabels: Record<string, string> = {
@@ -80,7 +81,7 @@ export async function loadMyContributions(): Promise<ContributionItem[]> {
 
   if (error || !data) return [];
 
-  return data.map((item) => ({
+  const contributions = data.map((item) => ({
     id: item.id,
     title: item.title,
     category: item.category,
@@ -89,4 +90,10 @@ export async function loadMyContributions(): Promise<ContributionItem[]> {
     status: item.status,
     createdAt: item.created_at,
   }));
+  writeCache(user.id, "contributions", contributions);
+  return contributions;
+}
+
+export function readCachedContributions(userId?: string): ContributionItem[] {
+  return readCache<ContributionItem[]>(userId, "contributions", []);
 }

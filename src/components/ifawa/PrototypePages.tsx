@@ -33,12 +33,15 @@ import { cn } from "@/lib/utils";
 import {
   createContribution,
   loadMyContributions,
+  readCachedContributions,
   type ContributionItem,
 } from "@/lib/ifawa-contributions";
 import {
   createServiceRequest,
   fetchServiceCatalog,
   loadMyServiceRequests,
+  readCachedServiceCatalog,
+  readCachedServiceRequests,
   type ServiceCard,
   type ServiceRequest,
 } from "@/lib/ifawa-services";
@@ -46,10 +49,13 @@ import { loadCurrentProfile, updateProfileSettings, uploadProfileAvatar } from "
 import {
   answerRemoteConnection,
   findOrCreateConversation,
-  loadNotificationsFromSupabase,
   loadConversationsFromSupabase,
   loadMemberProfile,
   loadNetworkFromSupabase,
+  loadNotificationsFromSupabase,
+  readCachedConversations,
+  readCachedNetwork,
+  readCachedNotifications,
   removeRemoteConnection,
   sendRemoteConnection,
   sendRemoteMessage,
@@ -118,6 +124,7 @@ function formatShortDate(value: string) {
 
 export function ReseauPage() {
   const navigate = useNavigate();
+  const { currentUserId } = useApp();
   const [remoteNetwork, setRemoteNetwork] = useState<Awaited<
     ReturnType<typeof loadNetworkFromSupabase>
   > | null>(null);
@@ -140,8 +147,13 @@ export function ReseauPage() {
   }
 
   useEffect(() => {
+    const cached = readCachedNetwork(currentUserId);
+    if (cached) {
+      setRemoteNetwork(cached);
+      setLoading(false);
+    }
     void refreshNetwork();
-  }, []);
+  }, [currentUserId]);
 
   const network = remoteNetwork ?? { received: [], sent: [], accepted: [], suggestions: [] };
   const searchable = query.trim().toLowerCase();
@@ -324,6 +336,7 @@ export function ReseauPage() {
 }
 
 export function MessagesPage() {
+  const { currentUserId } = useApp();
   const messageSearch = useRouterState({
     select: (state) => state.location.search as { conversation?: string; peer?: string },
   });
@@ -360,8 +373,13 @@ export function MessagesPage() {
   }
 
   useEffect(() => {
+    const cached = readCachedConversations(currentUserId);
+    if (cached) {
+      setLocalMessages(cached);
+      setLoading(false);
+    }
     void refreshMessages();
-  }, []);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (messageSearch.conversation) {
@@ -655,7 +673,7 @@ export function ProfilPage() {
 }
 
 export function ServicesPage() {
-  const [catalog, setCatalog] = useState<ServiceCard[]>(mockServices);
+  const [catalog, setCatalog] = useState<ServiceCard[]>(() => readCachedServiceCatalog());
 
   useEffect(() => {
     let cancelled = false;
@@ -1033,11 +1051,18 @@ export function ContribuerPage() {
 }
 
 export function DossierPage() {
-  const { profil } = useApp();
-  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const { profil, currentUserId } = useApp();
+  const [requests, setRequests] = useState<ServiceRequest[]>(() =>
+    readCachedServiceRequests(currentUserId),
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const cached = readCachedServiceRequests(currentUserId);
+    if (cached.length) {
+      setRequests(cached);
+      setLoading(false);
+    }
     let active = true;
     loadMyServiceRequests()
       .then((items) => {
@@ -1049,7 +1074,7 @@ export function DossierPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [currentUserId]);
 
   return (
     <Shell>
@@ -1098,11 +1123,23 @@ export function DossierPage() {
 }
 
 export function CarnetPage() {
-  const [requests, setRequests] = useState<ServiceRequest[]>([]);
-  const [contributions, setContributions] = useState<ContributionItem[]>([]);
+  const { currentUserId } = useApp();
+  const [requests, setRequests] = useState<ServiceRequest[]>(() =>
+    readCachedServiceRequests(currentUserId),
+  );
+  const [contributions, setContributions] = useState<ContributionItem[]>(() =>
+    readCachedContributions(currentUserId),
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const cachedRequests = readCachedServiceRequests(currentUserId);
+    const cachedContributions = readCachedContributions(currentUserId);
+    if (cachedRequests.length || cachedContributions.length) {
+      setRequests(cachedRequests);
+      setContributions(cachedContributions);
+      setLoading(false);
+    }
     let active = true;
     Promise.all([loadMyServiceRequests(), loadMyContributions()])
       .then(([nextRequests, nextContributions]) => {
@@ -1116,7 +1153,7 @@ export function CarnetPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [currentUserId]);
 
   const entries = [
     ...requests.map((item) => ({
@@ -1162,8 +1199,18 @@ export function CarnetPage() {
 }
 
 export function NotificationsPage() {
-  const { notifications } = useApp();
+  const { notifications, currentUserId } = useApp();
   const [filter, setFilter] = useState<"all" | "unread">("all");
+
+  useEffect(() => {
+    const cached = readCachedNotifications(currentUserId);
+    if (cached) actions.remplacerNotifications(cached);
+    loadNotificationsFromSupabase()
+      .then((items) => {
+        if (items) actions.remplacerNotifications(items);
+      })
+      .catch(() => {});
+  }, [currentUserId]);
   const shown =
     filter === "unread"
       ? notifications.filter((notification) => notification.nonLue)
@@ -1348,10 +1395,18 @@ export function ParametresPage() {
 }
 
 export function SuiviPage() {
-  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const { currentUserId } = useApp();
+  const [requests, setRequests] = useState<ServiceRequest[]>(() =>
+    readCachedServiceRequests(currentUserId),
+  );
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const cached = readCachedServiceRequests(currentUserId);
+    if (cached.length) {
+      setRequests(cached);
+      setLoading(false);
+    }
     let active = true;
     loadMyServiceRequests()
       .then((items) => {
@@ -1363,7 +1418,7 @@ export function SuiviPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [currentUserId]);
 
   const current = requests[0];
 
