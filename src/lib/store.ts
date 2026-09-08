@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { type Post, demandesConnexion, type Notification } from "@/data/mock";
+import { type Post, type Notification } from "@/data/mock";
 
 export type ReactionKind = "like" | "love" | "laugh" | "support";
 
@@ -44,8 +44,8 @@ const initial: AppState = {
   posts: [],
   reactions: {},
   notifications: [],
-  connexions: ["segbo23", "ayaba", "todan"],
-  demandes: demandesConnexion.map((d) => ({ id: d.id, etat: "attente" as const })),
+  connexions: [],
+  demandes: [],
   demandesEnvoyees: [],
 };
 

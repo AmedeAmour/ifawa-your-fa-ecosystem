@@ -9,6 +9,8 @@ type ProfileRow = {
   display_name: string | null;
   avatar_url: string | null;
   path?: string | null;
+  is_profile_complete?: boolean | null;
+  relation_enabled?: boolean | null;
 };
 
 type PostPayload = {
@@ -82,6 +84,29 @@ function displayName(profile?: ProfileRow) {
   return profile.display_name?.trim() || `@${profile.username ?? "membre"}`;
 }
 
+function isInternalTestProfile(profile?: Pick<ProfileRow, "username" | "display_name"> | null) {
+  const text = `${profile?.username ?? ""} ${profile?.display_name ?? ""}`.toLowerCase();
+  return [
+    "codex",
+    "uitest",
+    "service test",
+    "service flow",
+    "servicetest",
+    "serviceflow",
+    "contribution test",
+    "contribution flow",
+    "contribtest",
+    "contribflow",
+    "utilisateur a",
+    "utilisateur b",
+    "fulla",
+    "fullb",
+    "msg fast",
+    "msgfa",
+    "msgfb",
+  ].some((marker) => text.includes(marker));
+}
+
 function relativeTime(value?: string | null) {
   if (!value) return "";
   const date = new Date(value);
@@ -128,7 +153,7 @@ async function profileMap(ids: string[]) {
   const unique = [...new Set(ids)];
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, username, display_name, avatar_url, path")
+    .select("id, username, display_name, avatar_url, path, is_profile_complete, relation_enabled")
     .in("id", unique);
   if (error) throw error;
   return new Map((data ?? []).map((profile) => [profile.id, profile as ProfileRow]));
@@ -183,37 +208,41 @@ export async function loadFeedFromSupabase() {
     return acc;
   }, {});
 
-  const mappedPosts: Post[] = postRows.map((post) => {
-    const author = profiles.get(post.author_id);
-    const payload = parsePayload(post.body);
-    return {
-      id: post.id,
-      authorId: post.author_id,
-      auteur: displayName(author),
-      authorAvatarUrl: author?.avatar_url ?? undefined,
-      type: payload.type ?? "Membre",
-      heure: relativeTime(post.created_at),
-      contenu: payload.sharedFrom
-        ? `${payload.text}\n\nPublication partagée de ${payload.sharedFrom.author} : ${payload.sharedFrom.text}`
-        : payload.text,
-      image: Boolean(payload.mediaUrl),
-      mediaUrl: payload.mediaUrl,
-      reactions: reactionCounts[post.id] ?? 0,
-      canEdit: post.author_id === userId,
-      commentaires: (commentsByPost[post.id] ?? []).map((comment) => {
-        const commentAuthor = profiles.get(comment.author_id);
-        return {
-          id: comment.id,
-          authorId: comment.author_id,
-          auteur: displayName(commentAuthor),
-          authorAvatarUrl: commentAuthor?.avatar_url ?? undefined,
-          texte: comment.body ?? "",
-          heure: relativeTime(comment.created_at),
-          canDelete: comment.author_id === userId || post.author_id === userId,
-        };
-      }),
-    };
-  });
+  const mappedPosts: Post[] = postRows
+    .filter((post) => !isInternalTestProfile(profiles.get(post.author_id)))
+    .map((post) => {
+      const author = profiles.get(post.author_id);
+      const payload = parsePayload(post.body);
+      return {
+        id: post.id,
+        authorId: post.author_id,
+        auteur: displayName(author),
+        authorAvatarUrl: author?.avatar_url ?? undefined,
+        type: payload.type ?? "Membre",
+        heure: relativeTime(post.created_at),
+        contenu: payload.sharedFrom
+          ? `${payload.text}\n\nPublication partagée de ${payload.sharedFrom.author} : ${payload.sharedFrom.text}`
+          : payload.text,
+        image: Boolean(payload.mediaUrl),
+        mediaUrl: payload.mediaUrl,
+        reactions: reactionCounts[post.id] ?? 0,
+        canEdit: post.author_id === userId,
+        commentaires: (commentsByPost[post.id] ?? [])
+          .filter((comment) => !isInternalTestProfile(profiles.get(comment.author_id)))
+          .map((comment) => {
+            const commentAuthor = profiles.get(comment.author_id);
+            return {
+              id: comment.id,
+              authorId: comment.author_id,
+              auteur: displayName(commentAuthor),
+              authorAvatarUrl: commentAuthor?.avatar_url ?? undefined,
+              texte: comment.body ?? "",
+              heure: relativeTime(comment.created_at),
+              canDelete: comment.author_id === userId || post.author_id === userId,
+            };
+          }),
+      };
+    });
 
   const payload = { posts: mappedPosts, reactions: myReactions };
   writeCache(userId, "feed", payload);
@@ -375,8 +404,11 @@ export async function loadNetworkFromSupabase() {
     await Promise.all([
       supabase
         .from("profiles")
-        .select("id, username, display_name, avatar_url, path")
+        .select(
+          "id, username, display_name, avatar_url, path, is_profile_complete, relation_enabled",
+        )
         .neq("id", userId)
+        .eq("is_profile_complete", true)
         .limit(500),
       supabase
         .from("connections")
@@ -392,25 +424,29 @@ export async function loadNetworkFromSupabase() {
     addressee_id: string;
     status: string;
   }>;
-  const members = ((profiles ?? []) as ProfileRow[]).map((profile) => {
-    const relation = connectionRows.find(
-      (item) => item.requester_id === profile.id || item.addressee_id === profile.id,
-    );
-    return {
-      id: profile.id,
-      pseudo: displayName(profile),
-      avatarUrl: profile.avatar_url ?? undefined,
-      signe: profile.path === "initiated" ? "Membre initié" : "Découverte",
-      status: relation?.status,
-      requestId: relation?.id,
-      relationRole:
-        relation?.requester_id === userId
-          ? "requester"
-          : relation?.addressee_id === userId
-            ? "addressee"
-            : undefined,
-    };
-  });
+  const members = ((profiles ?? []) as ProfileRow[])
+    .filter((profile) => {
+      return !isInternalTestProfile(profile) && profile.relation_enabled !== false;
+    })
+    .map((profile) => {
+      const relation = connectionRows.find(
+        (item) => item.requester_id === profile.id || item.addressee_id === profile.id,
+      );
+      return {
+        id: profile.id,
+        pseudo: displayName(profile),
+        avatarUrl: profile.avatar_url ?? undefined,
+        signe: profile.path === "initiated" ? "Membre initié" : "Découverte",
+        status: relation?.status,
+        requestId: relation?.id,
+        relationRole:
+          relation?.requester_id === userId
+            ? "requester"
+            : relation?.addressee_id === userId
+              ? "addressee"
+              : undefined,
+      };
+    });
 
   const payload = {
     received: members.filter((member) => {
@@ -436,12 +472,13 @@ export async function loadMemberProfile(profileId: string): Promise<NetworkMembe
   if (!supabase || !profileId) return null;
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, username, display_name, avatar_url, path")
+    .select("id, username, display_name, avatar_url, path, is_profile_complete, relation_enabled")
     .eq("id", profileId)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
   const profile = data as ProfileRow;
+  if (isInternalTestProfile(profile)) return null;
   return {
     id: profile.id,
     pseudo: displayName(profile),
@@ -695,6 +732,7 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
     .map((connection) => {
       const otherId =
         connection.requester_id === userId ? connection.addressee_id : connection.requester_id;
+      if (isInternalTestProfile(profiles.get(otherId))) return null;
       const other = displayName(profiles.get(otherId));
       return {
         id: `connection-${connection.id}-${connection.status}`,
@@ -706,15 +744,18 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
         type: "connexion",
         nonLue: true,
       };
-    });
+    })
+    .filter((notification): notification is Notification => Boolean(notification));
 
-  const commentNotifications: Notification[] = commentRows.map((comment) => ({
-    id: `comment-${comment.id}`,
-    texte: `${displayName(commentProfiles.get(comment.author_id))} a commenté votre publication.`,
-    heure: relativeTime(comment.created_at),
-    type: "commentaire",
-    nonLue: true,
-  }));
+  const commentNotifications: Notification[] = commentRows
+    .filter((comment) => !isInternalTestProfile(commentProfiles.get(comment.author_id)))
+    .map((comment) => ({
+      id: `comment-${comment.id}`,
+      texte: `${displayName(commentProfiles.get(comment.author_id))} a commenté votre publication.`,
+      heure: relativeTime(comment.created_at),
+      type: "commentaire",
+      nonLue: true,
+    }));
 
   const payload = [...connectionNotifications, ...commentNotifications].slice(0, 50);
   writeCache(userId, "notifications", payload);

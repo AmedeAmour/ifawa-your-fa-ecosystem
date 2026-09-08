@@ -594,11 +594,24 @@ export function MessagesPage() {
 }
 
 export function ProfilPage() {
-  const { profil, posts, connexions, currentUserId } = useApp();
+  const { profil, posts, currentUserId } = useApp();
   const [tab, setTab] = useState("publications");
+  const [connectionCount, setConnectionCount] = useState(
+    readCachedNetwork(currentUserId)?.accepted.length ?? 0,
+  );
   const ownPosts = posts.filter((post) =>
     currentUserId ? post.authorId === currentUserId : post.auteur === profil.pseudo,
   );
+
+  useEffect(() => {
+    const cached = readCachedNetwork(currentUserId);
+    if (cached) setConnectionCount(cached.accepted.length);
+    loadNetworkFromSupabase()
+      .then((items) => {
+        if (items) setConnectionCount(items.accepted.length);
+      })
+      .catch(() => {});
+  }, [currentUserId]);
 
   return (
     <Shell>
@@ -612,7 +625,7 @@ export function ProfilPage() {
             <div>
               <h1 className="font-display text-[38px] uppercase leading-none">{profil.pseudo}</h1>
               <p className="mt-2 text-[13px] text-ivory/70">
-                {connexions.length} connexions ·{" "}
+                {connectionCount} connexions ·{" "}
                 {profil.initie
                   ? `${profil.signe} · initié en ${profil.annee}`
                   : "Espace découverte"}
