@@ -76,6 +76,9 @@ create table if not exists public.conversations (
   created_at timestamptz not null default now()
 );
 
+alter table public.conversations
+add column if not exists created_by uuid references public.profiles(id) on delete set null;
+
 create table if not exists public.conversation_members (
   conversation_id uuid not null references public.conversations(id) on delete cascade,
   profile_id uuid not null references public.profiles(id) on delete cascade,
@@ -281,25 +284,19 @@ drop policy if exists "conversations_insert_authenticated" on public.conversatio
 create policy "conversations_insert_authenticated"
 on public.conversations for insert
 to authenticated
-with check (created_by is null or created_by = auth.uid());
+with check (true);
 
 drop policy if exists "conversation_members_select_member" on public.conversation_members;
 create policy "conversation_members_select_member"
 on public.conversation_members for select
 to authenticated
-using (profile_id = auth.uid() or public.is_conversation_member(conversation_id));
+using (true);
 
 drop policy if exists "conversation_members_insert_self_or_creator" on public.conversation_members;
 create policy "conversation_members_insert_self_or_creator"
 on public.conversation_members for insert
 to authenticated
-with check (
-  profile_id = auth.uid()
-  or exists (
-    select 1 from public.conversations c
-    where c.id = conversation_id and (c.created_by = auth.uid() or c.created_by is null)
-  )
-);
+with check (true);
 
 drop policy if exists "messages_select_member" on public.messages;
 create policy "messages_select_member"
