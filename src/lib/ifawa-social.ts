@@ -523,7 +523,8 @@ export async function loadConversationsFromSupabase() {
 
   const { data: memberships, error: membershipsError } = await supabase
     .from("conversation_members")
-    .select("conversation_id, profile_id, created_at, last_read_at");
+    .select("conversation_id, profile_id, created_at, last_read_at")
+    .eq("profile_id", userId);
   if (membershipsError) throw membershipsError;
 
   const myConversationIds = (
@@ -532,9 +533,7 @@ export async function loadConversationsFromSupabase() {
       profile_id: string;
       last_read_at: string | null;
     }>
-  )
-    .filter((member) => member.profile_id === userId)
-    .map((member) => member.conversation_id);
+  ).map((member) => member.conversation_id);
   if (myConversationIds.length === 0) return [];
 
   const [{ data: messages, error: messagesError }, { data: allMembers, error: membersError }] =

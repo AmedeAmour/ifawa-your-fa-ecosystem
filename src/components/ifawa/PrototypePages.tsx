@@ -918,11 +918,6 @@ export function RecherchePage() {
     return [
       ...signes.map((s) => ({ title: s.nom, text: s.soustitre, to: `/fa/${s.slug}` })),
       ...remoteMembers,
-      ...membres.map((m) => ({
-        title: m.pseudo,
-        text: `${m.signe} · ${m.connexions} connexions`,
-        to: "/reseau",
-      })),
       ...mockServices.map((s) => ({
         title: s.titre,
         text: s.description,
