@@ -118,27 +118,13 @@ export function ReseauPage() {
   const suggestions = [...network.sent, ...network.suggestions].filter(matches);
   const received = network.received.filter(matches);
 
-  async function openConversation(member: NetworkMember) {
+  function openConversation(member: NetworkMember) {
     setNetworkStatus("");
-    try {
-      const conversationId = await findOrCreateConversation(member.id);
-      if (!conversationId) {
-        navigate({
-          to: "/messages",
-          search: { peer: member.id } as never,
-        });
-        return;
-      }
-      navigate({
-        to: "/messages",
-        search: { conversation: conversationId } as never,
-      });
-    } catch {
-      navigate({
-        to: "/messages",
-        search: { peer: member.id } as never,
-      });
-    }
+    setSelected(null);
+    navigate({
+      to: "/messages",
+      search: { peer: member.id } as never,
+    });
   }
 
   return (
@@ -262,7 +248,7 @@ export function ReseauPage() {
                 <Btn
                   variant="outline"
                   className="shrink-0 border-ivory/25 px-3 text-ivory hover:bg-ivory/10"
-                  onClick={() => void openConversation(member)}
+                  onClick={() => openConversation(member)}
                 >
                   Écrire
                 </Btn>
@@ -270,8 +256,14 @@ export function ReseauPage() {
                   <button
                     type="button"
                     onClick={async () => {
-                      await removeRemoteConnection(member.requestId!);
-                      await refreshNetwork();
+                      setNetworkStatus("Retrait de la connexion...");
+                      try {
+                        await removeRemoteConnection(member.requestId!);
+                        await refreshNetwork();
+                        setNetworkStatus("Connexion retirée.");
+                      } catch {
+                        setNetworkStatus("Impossible de retirer cette connexion pour le moment.");
+                      }
                     }}
                     className="grid size-9 shrink-0 place-items-center text-ivory/65 transition-colors hover:text-brass"
                     aria-label="Retirer cette connexion"
@@ -291,7 +283,7 @@ export function ReseauPage() {
         <ProfilePreview
           member={selected}
           onClose={() => setSelected(null)}
-          onWrite={() => void openConversation(selected)}
+          onWrite={() => openConversation(selected)}
         />
       )}
     </Shell>
@@ -1335,7 +1327,7 @@ function ProfilePreview({
   onWrite: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-umber/35 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-umber/35 p-4 pt-16 backdrop-blur-sm sm:items-center sm:p-6">
       <div className="w-full max-w-lg animate-rise bg-card text-umber shadow-2xl carved">
         <div className="h-32 bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
         <div className="-mt-10 px-5 pb-5">
