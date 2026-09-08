@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { Logo, Monogram, Panel, Kicker } from "./primitives";
 import { actions, useApp } from "@/lib/store";
-import { membres } from "@/data/mock";
 import { cn } from "@/lib/utils";
 import { getCurrentUser, loadCurrentProfile, onAuthUserChange, signOut } from "@/lib/ifawa-auth";
 import { loadNotificationsFromSupabase } from "@/lib/ifawa-social";
@@ -242,8 +241,8 @@ function SideLink({
 }
 
 function DefaultRail() {
-  const { profil } = useApp();
-  const memes = membres.filter((m) => m.signe === profil.signe).slice(0, 3);
+  const { profil, notifications } = useApp();
+  const unread = notifications.filter((notification) => notification.nonLue).length;
   return (
     <>
       <Panel tone="forest">
@@ -253,27 +252,19 @@ function DefaultRail() {
           Initié depuis {profil.annee} · {profil.satisfaction}
         </p>
         <Link
-          to="/fa/$slug"
-          params={{ slug: "gbe-medji" }}
+          to="/fa"
           className="mt-4 inline-block font-mono text-[10px] uppercase tracking-[0.18em] text-brass hover:text-ivory"
         >
-          Ouvrir la fiche →
+          Ouvrir les signes →
         </Link>
       </Panel>
 
       <Panel>
-        <Kicker className="mb-3">Même signe que vous</Kicker>
-        <ul className="space-y-3">
-          {memes.map((m) => (
-            <li key={m.id} className="flex items-center gap-3">
-              <Monogram name={m.pseudo} size={34} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-semibold">{m.pseudo}</p>
-                <p className="label-mono text-umber-soft">Initié en {m.annee}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <Kicker className="mb-3">Réseau Ifawa</Kicker>
+        <p className="text-[13px] leading-relaxed text-umber-soft">
+          Retrouvez les membres disponibles, acceptez les invitations et ouvrez une conversation
+          depuis votre réseau.
+        </p>
         <Link
           to="/reseau"
           className="mt-4 inline-block font-mono text-[10px] uppercase tracking-[0.18em] text-clay"
@@ -285,6 +276,11 @@ function DefaultRail() {
       <Panel tone="deep">
         <Kicker className="mb-3">Raccourcis</Kicker>
         <ul className="space-y-2 text-[13px]">
+          <li>
+            <Link to="/notifications" className="hover:text-clay">
+              Notifications {unread > 0 ? `(${unread})` : ""} →
+            </Link>
+          </li>
           <li>
             <Link to="/services/consultation" className="hover:text-clay">
               Consultation Fa →
