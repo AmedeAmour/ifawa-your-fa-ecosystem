@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -11,6 +11,7 @@ import {
   Search,
   Send,
   Shield,
+  UserMinus,
   Users,
 } from "lucide-react";
 import {
@@ -18,8 +19,6 @@ import {
   carnet,
   consultationsAdmin,
   contributionsAdmin,
-  conversations,
-  demandesConnexion,
   formulesAccompagnement,
   formulesConsultation,
   formulesEtude,
@@ -33,11 +32,15 @@ import {
 import { actions, useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { fetchServiceCatalog, type ServiceCard } from "@/lib/ifawa-services";
-import { updateProfileSettings } from "@/lib/ifawa-auth";
+import { loadCurrentProfile, updateProfileSettings, uploadProfileAvatar } from "@/lib/ifawa-auth";
 import {
   answerRemoteConnection,
+  findOrCreateConversation,
+  loadNotificationsFromSupabase,
   loadConversationsFromSupabase,
+  loadMemberProfile,
   loadNetworkFromSupabase,
+  removeRemoteConnection,
   sendRemoteConnection,
   sendRemoteMessage,
   type ConversationItem,
@@ -80,28 +83,26 @@ const serviceCopy: Record<string, { title: string; kicker: string; intro: string
   },
 };
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
 export function ReseauPage() {
-  const { demandes, demandesEnvoyees, connexions, profil } = useApp();
+  const navigate = useNavigate();
   const [remoteNetwork, setRemoteNetwork] = useState<Awaited<
     ReturnType<typeof loadNetworkFromSupabase>
   > | null>(null);
-  const connexionsActuelles = membres.filter((m) => connexions.includes(m.id));
-  const suggestions = membres.filter((m) => !connexions.includes(m.id));
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<NetworkMember | null>(null);
+  const [networkStatus, setNetworkStatus] = useState("");
 
   async function refreshNetwork() {
     try {
-      setRemoteNetwork(await loadNetworkFromSupabase());
+      const next = await loadNetworkFromSupabase();
+      setRemoteNetwork(next ?? { received: [], sent: [], accepted: [], suggestions: [] });
+      const notifications = await loadNotificationsFromSupabase();
+      if (notifications) actions.remplacerNotifications(notifications);
     } catch {
-      setRemoteNetwork(null);
+      setRemoteNetwork({ received: [], sent: [], accepted: [], suggestions: [] });
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -109,53 +110,109 @@ export function ReseauPage() {
     void refreshNetwork();
   }, []);
 
-  if (remoteNetwork) {
-    return (
-      <Shell>
-        <PageTitle kicker="Réseau">Membres et connexions</PageTitle>
+  const network = remoteNetwork ?? { received: [], sent: [], accepted: [], suggestions: [] };
+  const searchable = query.trim().toLowerCase();
+  const matches = (member: NetworkMember) =>
+    !searchable || `${member.pseudo} ${member.signe}`.toLowerCase().includes(searchable);
+  const accepted = network.accepted.filter(matches);
+  const suggestions = [...network.sent, ...network.suggestions].filter(matches);
+  const received = network.received.filter(matches);
 
-        <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-          <Panel>
-            <SectionHeader icon={Users} title="Demandes reçues" />
-            <div className="space-y-3">
-              {remoteNetwork.received.length ? (
-                remoteNetwork.received.map((member) => (
-                  <RemoteMemberRow key={member.id} member={member}>
-                    <Btn
-                      onClick={async () => {
-                        if (!member.requestId) return;
-                        await answerRemoteConnection(member.requestId, "accepted");
-                        await refreshNetwork();
-                      }}
-                    >
-                      Accepter
-                    </Btn>
-                    <Btn
-                      variant="quiet"
-                      onClick={async () => {
-                        if (!member.requestId) return;
-                        await answerRemoteConnection(member.requestId, "rejected");
-                        await refreshNetwork();
-                      }}
-                    >
-                      Refuser
-                    </Btn>
-                  </RemoteMemberRow>
-                ))
-              ) : (
-                <Empty titre="Aucune demande" texte="Les nouvelles invitations apparaîtront ici." />
-              )}
-            </div>
-          </Panel>
+  async function openConversation(member: NetworkMember) {
+    setNetworkStatus("");
+    try {
+      const conversationId = await findOrCreateConversation(member.id);
+      if (!conversationId) {
+        navigate({
+          to: "/messages",
+          search: { peer: member.id } as never,
+        });
+        return;
+      }
+      navigate({
+        to: "/messages",
+        search: { conversation: conversationId } as never,
+      });
+    } catch {
+      navigate({
+        to: "/messages",
+        search: { peer: member.id } as never,
+      });
+    }
+  }
 
-          <Panel tone="deep">
-            <SectionHeader icon={Shield} title="Suggestions" />
-            <p className="mb-4 text-[13px] leading-relaxed text-umber-soft">
-              Retrouvez les membres disponibles et envoyez une demande de connexion.
-            </p>
-            <div className="space-y-3">
-              {[...remoteNetwork.sent, ...remoteNetwork.suggestions].slice(0, 8).map((member) => (
-                <RemoteMemberRow key={member.id} member={member}>
+  return (
+    <Shell>
+      <PageTitle kicker="Réseau">Membres et connexions</PageTitle>
+
+      <Panel tone="deep" className="mb-5">
+        <div className="flex items-center gap-2">
+          <Search className="size-4 text-umber-soft" />
+          <input
+            className="w-full bg-transparent text-[15px] outline-none"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Rechercher un membre ou une connexion"
+          />
+        </div>
+        {networkStatus && <p className="mt-3 text-[13px] text-clay">{networkStatus}</p>}
+      </Panel>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
+        <Panel>
+          <SectionHeader icon={Users} title="Demandes reçues" />
+          <div className="space-y-3">
+            {loading ? (
+              <Empty titre="Chargement" texte="Vérification de vos demandes de connexion." />
+            ) : received.length ? (
+              received.map((member) => (
+                <RemoteMemberRow
+                  key={member.id}
+                  member={member}
+                  onSelect={() => setSelected(member)}
+                >
+                  <Btn
+                    onClick={async () => {
+                      if (!member.requestId) return;
+                      await answerRemoteConnection(member.requestId, "accepted");
+                      await refreshNetwork();
+                    }}
+                  >
+                    Accepter
+                  </Btn>
+                  <Btn
+                    variant="quiet"
+                    onClick={async () => {
+                      if (!member.requestId) return;
+                      await answerRemoteConnection(member.requestId, "rejected");
+                      await refreshNetwork();
+                    }}
+                  >
+                    Refuser
+                  </Btn>
+                </RemoteMemberRow>
+              ))
+            ) : (
+              <Empty titre="Aucune demande" texte="Les nouvelles invitations apparaîtront ici." />
+            )}
+          </div>
+        </Panel>
+
+        <Panel tone="deep">
+          <SectionHeader icon={Shield} title="Suggestions" />
+          <p className="mb-4 text-[13px] leading-relaxed text-umber-soft">
+            Retrouvez les membres disponibles et envoyez une demande de connexion.
+          </p>
+          <div className="space-y-3">
+            {loading ? (
+              <Empty titre="Chargement" texte="Recherche des membres disponibles." />
+            ) : suggestions.length ? (
+              suggestions.slice(0, 12).map((member) => (
+                <RemoteMemberRow
+                  key={member.id}
+                  member={member}
+                  onSelect={() => setSelected(member)}
+                >
                   {member.status === "pending" ? (
                     <span className="label-mono text-clay">Demande envoyée</span>
                   ) : (
@@ -170,143 +227,110 @@ export function ReseauPage() {
                     </Btn>
                   )}
                 </RemoteMemberRow>
-              ))}
-            </div>
-          </Panel>
-        </div>
-
-        <Panel tone="forest" className="mt-5">
-          <Kicker className="text-brass">Connexions actuelles</Kicker>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            {remoteNetwork.accepted.length ? (
-              remoteNetwork.accepted.map((member) => (
-                <Link
-                  key={member.id}
-                  to="/profil"
-                  className="bg-ivory/10 p-4 transition-colors hover:bg-ivory/15"
-                >
-                  <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={38} />
-                  <p className="mt-3 font-semibold">{member.pseudo}</p>
-                  <p className="label-mono mt-1 text-ivory/60">{member.signe}</p>
-                </Link>
               ))
             ) : (
-              <p className="text-[13px] text-ivory/70">
-                Vos connexions acceptées apparaîtront ici.
-              </p>
+              <Empty titre="Aucune suggestion" texte="Les membres disponibles apparaîtront ici." />
             )}
-          </div>
-        </Panel>
-      </Shell>
-    );
-  }
-
-  return (
-    <Shell>
-      <PageTitle kicker="Réseau">Membres et connexions</PageTitle>
-
-      <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-        <Panel>
-          <SectionHeader icon={Users} title="Demandes reçues" />
-          <div className="space-y-3">
-            {demandesConnexion.map((demande) => {
-              const etat = demandes.find((d) => d.id === demande.id)?.etat ?? "attente";
-              return (
-                <MemberRow
-                  key={demande.id}
-                  name={demande.pseudo}
-                  meta={`${demande.motif} · ${demande.signe}`}
-                  active={etat === "acceptee"}
-                >
-                  {etat === "attente" ? (
-                    <div className="flex gap-2">
-                      <Btn onClick={() => actions.repondreDemande(demande.id, "acceptee")}>
-                        Accepter
-                      </Btn>
-                      <Btn
-                        variant="quiet"
-                        onClick={() => actions.repondreDemande(demande.id, "refusee")}
-                      >
-                        Refuser
-                      </Btn>
-                    </div>
-                  ) : (
-                    <span className="label-mono text-clay">
-                      {etat === "acceptee" ? "Acceptée" : "Refusée"}
-                    </span>
-                  )}
-                </MemberRow>
-              );
-            })}
-          </div>
-        </Panel>
-
-        <Panel tone="deep">
-          <SectionHeader icon={Shield} title="Même signe que vous" />
-          <p className="mb-4 text-[13px] leading-relaxed text-umber-soft">
-            Votre signe actuel : {profil.signe}. Les demandes restent encadrées par vos réglages de
-            confidentialité.
-          </p>
-          <div className="space-y-3">
-            {suggestions.slice(0, 5).map((membre) => (
-              <MemberRow
-                key={membre.id}
-                name={membre.pseudo}
-                meta={`${membre.signe} · ${membre.connexions} connexions`}
-              >
-                {demandesEnvoyees.includes(membre.id) ? (
-                  <span className="label-mono text-clay">Demande envoyée</span>
-                ) : (
-                  <Btn variant="outline" onClick={() => actions.envoyerDemande(membre.id)}>
-                    Ajouter
-                  </Btn>
-                )}
-              </MemberRow>
-            ))}
           </div>
         </Panel>
       </div>
 
       <Panel tone="forest" className="mt-5">
         <Kicker className="text-brass">Connexions actuelles</Kicker>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {connexionsActuelles.map((membre) => (
-            <Link
-              key={membre.id}
-              to="/profil"
-              className="bg-ivory/10 p-4 transition-colors hover:bg-ivory/15"
-            >
-              <Monogram name={membre.pseudo} size={38} />
-              <p className="mt-3 font-semibold">{membre.pseudo}</p>
-              <p className="label-mono mt-1 text-ivory/60">{membre.signe}</p>
-            </Link>
-          ))}
+        <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+          {accepted.length ? (
+            accepted.map((member) => (
+              <div
+                key={member.id}
+                className="flex items-center gap-3 bg-ivory/10 p-3 transition-colors hover:bg-ivory/15"
+              >
+                <button
+                  type="button"
+                  onClick={() => setSelected(member)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={38} />
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-semibold">
+                      {member.pseudo}
+                    </span>
+                    <span className="label-mono mt-1 block truncate text-ivory/60">
+                      {member.signe}
+                    </span>
+                  </span>
+                </button>
+                <Btn
+                  variant="outline"
+                  className="shrink-0 border-ivory/25 px-3 text-ivory hover:bg-ivory/10"
+                  onClick={() => void openConversation(member)}
+                >
+                  Écrire
+                </Btn>
+                {member.requestId && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await removeRemoteConnection(member.requestId!);
+                      await refreshNetwork();
+                    }}
+                    className="grid size-9 shrink-0 place-items-center text-ivory/65 transition-colors hover:text-brass"
+                    aria-label="Retirer cette connexion"
+                  >
+                    <UserMinus className="size-4" />
+                  </button>
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="text-[13px] text-ivory/70">Vos connexions acceptées apparaîtront ici.</p>
+          )}
         </div>
       </Panel>
+
+      {selected && (
+        <ProfilePreview
+          member={selected}
+          onClose={() => setSelected(null)}
+          onWrite={() => void openConversation(selected)}
+        />
+      )}
     </Shell>
   );
 }
 
 export function MessagesPage() {
+  const messageSearch = useRouterState({
+    select: (state) => state.location.search as { conversation?: string; peer?: string },
+  });
   const [active, setActive] = useState("");
   const [draft, setDraft] = useState("");
-  const [localMessages, setLocalMessages] = useState<ConversationItem[]>(
-    conversations.map((conversation) => ({
-      ...conversation,
-      messages: conversation.messages.map((message, index) => ({
-        ...message,
-        id: `${conversation.id}-${index}`,
-      })),
-    })),
-  );
+  const [localMessages, setLocalMessages] = useState<ConversationItem[]>([]);
+  const [pendingPeer, setPendingPeer] = useState<NetworkMember | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [messageStatus, setMessageStatus] = useState("");
   const conversation = localMessages.find((c) => c.id === active);
+  const pendingConversation =
+    !conversation && pendingPeer && active === `peer:${pendingPeer.id}`
+      ? {
+          id: `peer:${pendingPeer.id}`,
+          pseudo: pendingPeer.pseudo,
+          avatarUrl: pendingPeer.avatarUrl,
+          extrait: "Nouvelle conversation",
+          heure: "",
+          nonLus: 0,
+          messages: [],
+        }
+      : null;
+  const currentConversation = conversation ?? pendingConversation;
 
   async function refreshMessages() {
     try {
       const remote = await loadConversationsFromSupabase();
-      if (remote) setLocalMessages(remote);
+      setLocalMessages(remote ?? []);
     } catch {
-      // Keep local conversations visible if the remote channel is unavailable.
+      setLocalMessages([]);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -314,42 +338,74 @@ export function MessagesPage() {
     void refreshMessages();
   }, []);
 
+  useEffect(() => {
+    if (messageSearch.conversation) {
+      setPendingPeer(null);
+      setActive(messageSearch.conversation);
+      return;
+    }
+    if (!messageSearch.peer) return;
+    let cancelled = false;
+    loadMemberProfile(messageSearch.peer)
+      .then((member) => {
+        if (cancelled || !member) return;
+        setPendingPeer(member);
+        setActive(`peer:${member.id}`);
+      })
+      .catch(() => {
+        if (!cancelled) setMessageStatus("Impossible d'ouvrir ce membre pour le moment.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [messageSearch.conversation, messageSearch.peer]);
+
   return (
     <Shell>
       <PageTitle kicker="Messages">Conversations</PageTitle>
       <div className="grid min-h-[620px] gap-4 lg:grid-cols-[300px_1fr]">
         <Panel className={cn("space-y-2", active && "hidden lg:block")}>
-          {localMessages.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActive(item.id)}
-              className={cn(
-                "flex w-full items-center gap-3 p-3 text-left transition-colors",
-                active === item.id ? "bg-umber text-ivory" : "hover:bg-ivory-deep",
-              )}
-            >
-              <Monogram name={item.pseudo} size={38} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-semibold">{item.pseudo}</span>
-                <span
-                  className={cn(
-                    "block truncate text-[12px]",
-                    active === item.id ? "text-ivory/60" : "text-umber-soft",
-                  )}
-                >
-                  {item.extrait}
+          {loading ? (
+            <Empty titre="Chargement" texte="Ouverture de vos conversations." />
+          ) : localMessages.length ? (
+            localMessages.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setPendingPeer(null);
+                  setMessageStatus("");
+                  setActive(item.id);
+                }}
+                className={cn(
+                  "flex w-full items-center gap-3 p-3 text-left transition-colors",
+                  active === item.id ? "bg-umber text-ivory" : "hover:bg-ivory-deep",
+                )}
+              >
+                <Monogram name={item.pseudo} imageUrl={item.avatarUrl} size={38} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold">{item.pseudo}</span>
+                  <span
+                    className={cn(
+                      "block truncate text-[12px]",
+                      active === item.id ? "text-ivory/60" : "text-umber-soft",
+                    )}
+                  >
+                    {item.extrait}
+                  </span>
                 </span>
-              </span>
-              {item.nonLus > 0 && (
-                <span className="grid size-5 place-items-center rounded-full bg-clay font-mono text-[9px] text-ivory">
-                  {item.nonLus}
-                </span>
-              )}
-            </button>
-          ))}
+                {item.nonLus > 0 && (
+                  <span className="grid size-5 place-items-center rounded-full bg-clay font-mono text-[9px] text-ivory">
+                    {item.nonLus}
+                  </span>
+                )}
+              </button>
+            ))
+          ) : (
+            <Empty titre="Aucune conversation" texte="Écrivez à une connexion depuis le réseau." />
+          )}
         </Panel>
 
-        {conversation ? (
+        {currentConversation ? (
           <Panel tone="deep" className="flex flex-col">
             <div className="mb-4 flex items-center gap-3 border-b border-umber/10 pb-4">
               <button
@@ -360,45 +416,96 @@ export function MessagesPage() {
               >
                 <ChevronLeft className="size-5" />
               </button>
-              <Monogram name={conversation.pseudo} imageUrl={conversation.avatarUrl} size={42} />
+              <Monogram
+                name={currentConversation.pseudo}
+                imageUrl={currentConversation.avatarUrl}
+                size={42}
+              />
               <div>
-                <p className="font-semibold">{conversation.pseudo}</p>
+                <p className="font-semibold">{currentConversation.pseudo}</p>
                 <p className="label-mono text-umber-soft">Conversation</p>
               </div>
             </div>
+            {messageStatus && <p className="mb-3 text-[13px] text-clay">{messageStatus}</p>}
             <div className="flex-1 space-y-3">
-              {conversation.messages.map((message, index) => (
-                <div
-                  key={`${message.heure}-${index}`}
-                  className={cn(
-                    "max-w-[78%] p-3 text-[13px] leading-relaxed",
-                    message.de === "moi" ? "ml-auto bg-forest text-ivory" : "bg-card carved",
-                  )}
-                >
-                  {message.texte}
-                  <span
+              {currentConversation.messages.length ? (
+                currentConversation.messages.map((message, index) => (
+                  <div
+                    key={`${message.heure}-${index}`}
                     className={cn(
-                      "label-mono mt-1 block",
-                      message.de === "moi" ? "text-ivory/55" : "text-umber-soft/70",
+                      "max-w-[78%] p-3 text-[13px] leading-relaxed",
+                      message.de === "moi" ? "ml-auto bg-forest text-ivory" : "bg-card carved",
                     )}
                   >
-                    {message.heure}
-                  </span>
-                </div>
-              ))}
+                    {message.texte}
+                    <span
+                      className={cn(
+                        "label-mono mt-1 block",
+                        message.de === "moi" ? "text-ivory/55" : "text-umber-soft/70",
+                      )}
+                    >
+                      {message.heure}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <Empty
+                  titre="Conversation prête"
+                  texte="Écrivez votre premier message pour démarrer l'échange."
+                />
+              )}
             </div>
             <form
-              onSubmit={(event) => {
+              onSubmit={async (event) => {
                 event.preventDefault();
                 if (!draft.trim()) return;
+                setMessageStatus("");
+                let targetConversationId = currentConversation.id;
+                if (targetConversationId.startsWith("peer:")) {
+                  const peerId = targetConversationId.replace("peer:", "");
+                  try {
+                    const createdId = await findOrCreateConversation(peerId);
+                    if (!createdId) {
+                      setMessageStatus("Conversation indisponible pour le moment.");
+                      return;
+                    }
+                    targetConversationId = createdId;
+                    setActive(createdId);
+                    setPendingPeer(null);
+                  } catch {
+                    setMessageStatus("Impossible de créer cette conversation pour le moment.");
+                    return;
+                  }
+                }
                 setLocalMessages((items) =>
-                  items.map((item) =>
-                    item.id === conversation.id
-                      ? {
-                          ...item,
+                  items.some((item) => item.id === targetConversationId)
+                    ? items.map((item) =>
+                        item.id === targetConversationId
+                          ? {
+                              ...item,
+                              extrait: draft,
+                              messages: [
+                                ...item.messages,
+                                {
+                                  id: `local-${Date.now()}`,
+                                  de: "moi",
+                                  texte: draft,
+                                  heure: "à l'instant",
+                                },
+                              ],
+                            }
+                          : item,
+                      )
+                    : [
+                        ...items,
+                        {
+                          id: targetConversationId,
+                          pseudo: currentConversation.pseudo,
+                          avatarUrl: currentConversation.avatarUrl,
                           extrait: draft,
+                          heure: "à l'instant",
+                          nonLus: 0,
                           messages: [
-                            ...item.messages,
                             {
                               id: `local-${Date.now()}`,
                               de: "moi",
@@ -406,13 +513,15 @@ export function MessagesPage() {
                               heure: "à l'instant",
                             },
                           ],
-                        }
-                      : item,
-                  ),
+                        },
+                      ],
                 );
-                void sendRemoteMessage(conversation.id, draft)
+                void sendRemoteMessage(targetConversationId, draft)
                   .then(refreshMessages)
-                  .catch(refreshMessages);
+                  .catch(() => {
+                    setMessageStatus("Le message n'a pas pu être envoyé. Réessayez.");
+                    void refreshMessages();
+                  });
                 setDraft("");
               }}
               className="mt-5 flex gap-2"
@@ -442,17 +551,16 @@ export function MessagesPage() {
 }
 
 export function ProfilPage() {
-  const { profil, posts, connexions } = useApp();
+  const { profil, posts, connexions, currentUserId } = useApp();
   const [tab, setTab] = useState("publications");
-  const ownPosts = posts.filter((post) => post.auteur === profil.pseudo);
+  const ownPosts = posts.filter((post) =>
+    currentUserId ? post.authorId === currentUserId : post.auteur === profil.pseudo,
+  );
 
   return (
     <Shell>
       <Panel tone="forest" className="relative mb-5 overflow-hidden p-0">
-        <div
-          className="h-40 bg-[url('/src/assets/cover.jpg')] bg-cover bg-center opacity-90"
-          style={profil.coverUrl ? { backgroundImage: `url(${profil.coverUrl})` } : undefined}
-        />
+        <div className="h-40 bg-[url('/src/assets/cover.jpg')] bg-cover bg-center opacity-90" />
         <div className="relative z-10 -mt-10 flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-4">
             <div className="relative z-20 rounded-full border-4 border-forest bg-forest">
@@ -710,10 +818,30 @@ export function SigneDetailPage({ slug }: { slug: string }) {
 
 export function RecherchePage() {
   const [q, setQ] = useState("");
+  const [network, setNetwork] = useState<Awaited<
+    ReturnType<typeof loadNetworkFromSupabase>
+  > | null>(null);
+
+  useEffect(() => {
+    loadNetworkFromSupabase()
+      .then((items) => setNetwork(items))
+      .catch(() => setNetwork(null));
+  }, []);
+
   const results = useMemo(() => {
     const query = q.toLowerCase();
+    const remoteMembers = network
+      ? [...network.accepted, ...network.received, ...network.sent, ...network.suggestions].map(
+          (member) => ({
+            title: member.pseudo,
+            text: member.signe,
+            to: "/reseau",
+          }),
+        )
+      : [];
     return [
       ...signes.map((s) => ({ title: s.nom, text: s.soustitre, to: `/fa/${s.slug}` })),
+      ...remoteMembers,
       ...membres.map((m) => ({
         title: m.pseudo,
         text: `${m.signe} · ${m.connexions} connexions`,
@@ -725,7 +853,7 @@ export function RecherchePage() {
         to: `/services/${s.slug}`,
       })),
     ].filter((item) => `${item.title} ${item.text}`.toLowerCase().includes(query));
-  }, [q]);
+  }, [network, q]);
   return (
     <Shell>
       <PageTitle kicker="Recherche">Trouver rapidement</PageTitle>
@@ -923,25 +1051,38 @@ export function ParametresPage() {
   const [pseudo, setPseudo] = useState(profil.pseudo);
   const [relation, setRelation] = useState(profil.miseEnRelation);
   const [avatarUrl, setAvatarUrl] = useState(profil.avatarUrl ?? "");
-  const [coverUrl, setCoverUrl] = useState(profil.coverUrl ?? "");
   const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    setPseudo(profil.pseudo);
+    setRelation(profil.miseEnRelation);
+    setAvatarUrl(profil.avatarUrl ?? "");
+  }, [profil.avatarUrl, profil.miseEnRelation, profil.pseudo]);
 
   async function chooseProfileImage(file: File | undefined) {
     if (!file) return;
-    setAvatarUrl(await readFileAsDataUrl(file));
-  }
-
-  async function chooseCoverImage(file: File | undefined) {
-    if (!file) return;
-    setCoverUrl(await readFileAsDataUrl(file));
+    setStatus("Enregistrement de la photo...");
+    const nextAvatar = await uploadProfileAvatar(file);
+    setAvatarUrl(nextAvatar);
+    actions.majProfil({ avatarUrl: nextAvatar });
+    try {
+      await updateProfileSettings({ pseudo, miseEnRelation: relation, avatarUrl: nextAvatar });
+      const savedProfile = await loadCurrentProfile();
+      if (savedProfile) actions.majProfil(savedProfile);
+      setStatus("Photo de profil enregistrée.");
+    } catch {
+      setStatus("Photo ajoutée sur cet appareil. Réessayez l'enregistrement si nécessaire.");
+    }
   }
 
   async function save() {
     setStatus("");
-    const patch = { pseudo, miseEnRelation: relation, avatarUrl, coverUrl };
+    const patch = { pseudo, miseEnRelation: relation, avatarUrl };
     actions.majProfil(patch);
     try {
-      await updateProfileSettings({ pseudo, miseEnRelation: relation, avatarUrl, coverUrl });
+      await updateProfileSettings({ pseudo, miseEnRelation: relation, avatarUrl });
+      const savedProfile = await loadCurrentProfile();
+      if (savedProfile) actions.majProfil(savedProfile);
       setStatus("Profil enregistré.");
     } catch {
       setStatus(
@@ -981,17 +1122,10 @@ export function ParametresPage() {
             </div>
           </Field>
           <Field label="Photo de couverture">
-            <div className="space-y-2">
-              {coverUrl && (
-                <img src={coverUrl} alt="" className="aspect-[5/2] w-full object-cover" />
-              )}
-              <input
-                className={inputCls}
-                type="file"
-                accept="image/*"
-                onChange={(e) => void chooseCoverImage(e.target.files?.[0])}
-              />
-            </div>
+            <div className="aspect-[5/2] w-full bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
+            <p className="mt-2 text-[12px] text-umber-soft">
+              La couverture Ifawa est commune à tous les profils.
+            </p>
           </Field>
         </div>
         <button
@@ -1162,10 +1296,22 @@ function MemberRow({
   );
 }
 
-function RemoteMemberRow({ member, children }: { member: NetworkMember; children: ReactNode }) {
+function RemoteMemberRow({
+  member,
+  children,
+  onSelect,
+}: {
+  member: NetworkMember;
+  children: ReactNode;
+  onSelect?: () => void;
+}) {
   return (
     <div className="flex flex-col gap-3 bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center">
-      <div className="flex min-w-0 items-center gap-3">
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex min-w-0 items-center gap-3 text-left"
+      >
         <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={38} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[14px] font-semibold">{member.pseudo}</p>
@@ -1173,8 +1319,56 @@ function RemoteMemberRow({ member, children }: { member: NetworkMember; children
             {member.signe}
           </p>
         </div>
-      </div>
+      </button>
       <div className="flex flex-wrap gap-2 sm:ml-auto">{children}</div>
+    </div>
+  );
+}
+
+function ProfilePreview({
+  member,
+  onClose,
+  onWrite,
+}: {
+  member: NetworkMember;
+  onClose: () => void;
+  onWrite: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-umber/35 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-6">
+      <div className="w-full max-w-lg animate-rise bg-card text-umber shadow-2xl carved">
+        <div className="h-32 bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
+        <div className="-mt-10 px-5 pb-5">
+          <div className="relative z-10 inline-flex rounded-full border-4 border-card bg-card">
+            <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={76} tone="clay" />
+          </div>
+          <div className="mt-4 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="font-display text-[34px] uppercase leading-none">{member.pseudo}</h2>
+              <p className="label-mono mt-2 text-umber-soft">{member.signe}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="font-mono text-[10px] uppercase tracking-[0.16em] text-umber-soft hover:text-clay"
+            >
+              Fermer
+            </button>
+          </div>
+          <p className="mt-4 text-[14px] leading-relaxed text-umber-soft">
+            Profil membre Ifawa. Vous pouvez consulter les informations publiques et ouvrir un
+            échange privé si vous êtes connectés.
+          </p>
+          <div className="mt-5 flex gap-2">
+            <Btn onClick={onWrite}>
+              <Send className="size-3.5" /> Écrire
+            </Btn>
+            <Btn variant="quiet" onClick={onClose}>
+              Retour
+            </Btn>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

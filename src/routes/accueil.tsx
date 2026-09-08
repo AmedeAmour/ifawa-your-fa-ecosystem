@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { Image as ImageIcon, Compass } from "lucide-react";
 import { Shell } from "@/components/ifawa/Shell";
 import { PostCard } from "@/components/ifawa/PostCard";
-import { Btn, Kicker, Monogram, Panel, SectionTitle } from "@/components/ifawa/primitives";
+import { Btn, Empty, Kicker, Monogram, Panel, SectionTitle } from "@/components/ifawa/primitives";
 import { actions, useApp } from "@/lib/store";
-import { createRemotePost, loadFeedFromSupabase } from "@/lib/ifawa-social";
+import { createRemotePost, loadFeedFromSupabase, uploadPostMedia } from "@/lib/ifawa-social";
 import { decouverte } from "@/data/mock";
 import { cn } from "@/lib/utils";
 
@@ -31,8 +31,12 @@ function Accueil() {
   const { posts, profil } = useApp();
   const [texte, setTexte] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [filtre, setFiltre] = useState("Tout");
   const [type, setType] = useState<"Témoignage" | "Question" | "Contribution">("Témoignage");
+  const [loadingFeed, setLoadingFeed] = useState(true);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const filtres = ["Tout", "Membres", "Officiel", "Témoignages"];
   const types = ["Témoignage", "Question", "Contribution"] as const;
@@ -43,6 +47,8 @@ function Accueil() {
       if (remote) actions.remplacerPosts(remote.posts, remote.reactions);
     } catch {
       // The local feed remains available if the remote feed is temporarily unreachable.
+    } finally {
+      setLoadingFeed(false);
     }
   }
 
@@ -64,34 +70,53 @@ function Accueil() {
     <Shell>
       {!profil.initie && <DecouverteBloc />}
 
-      <Panel tone="deep" className="mb-5 animate-rise">
-        <div className="flex items-start gap-3">
+      <Panel className="mb-5 animate-rise">
+        <div className="flex items-center gap-3 border-b border-umber/10 pb-3">
           <Monogram name={profil.pseudo} imageUrl={profil.avatarUrl} size={40} />
-          <div className="flex-1">
+          <button
+            type="button"
+            onClick={() => setComposerOpen(true)}
+            className="min-h-11 flex-1 bg-ivory-deep/70 px-4 text-left text-[14px] text-umber-soft transition-colors hover:bg-ivory-deep"
+          >
+            Que souhaitez-vous partager ?
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 pt-3">
+          {types.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => {
+                setType(item);
+                setComposerOpen(true);
+              }}
+              className={cn(
+                "min-w-0 whitespace-nowrap px-2 py-2 text-center font-mono text-[8.5px] uppercase tracking-[0.08em] transition-colors sm:text-[9px] sm:tracking-[0.14em]",
+                type === item ? "bg-umber text-ivory" : "bg-ivory-deep text-umber-soft",
+              )}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+
+        {(composerOpen || texte || imageUrl) && (
+          <div className="mt-4 animate-fade">
             <textarea
               value={texte}
               onChange={(e) => setTexte(e.target.value)}
-              placeholder="Que souhaitez-vous partager ?"
-              rows={2}
-              className="w-full resize-none border-0 bg-transparent text-[15px] outline-none placeholder:text-umber-soft"
+              placeholder={
+                type === "Question"
+                  ? "Posez votre question à la communauté..."
+                  : type === "Contribution"
+                    ? "Partagez une contribution à faire vivre..."
+                    : "Racontez votre témoignage..."
+              }
+              rows={4}
+              autoFocus
+              className="w-full resize-none border border-umber/15 bg-ivory px-3 py-3 text-[15px] outline-none placeholder:text-umber-soft/70 focus:border-clay"
             />
-            <div className="mt-3">
-              <div className="grid grid-cols-3 gap-2">
-                {types.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setType(item)}
-                    className={cn(
-                      "min-w-0 whitespace-nowrap px-2 py-1.5 text-center font-mono text-[8.5px] uppercase tracking-[0.08em] transition-colors sm:text-[9px] sm:tracking-[0.14em]",
-                      type === item ? "bg-umber text-ivory" : "bg-card carved text-umber-soft",
-                    )}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </div>
             <div className="mt-3 flex items-center gap-2">
               <input
                 ref={fileRef}
@@ -101,6 +126,7 @@ function Accueil() {
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (!file) return;
+                  setImageFile(file);
                   const reader = new FileReader();
                   reader.onload = () => setImageUrl(String(reader.result));
                   reader.readAsDataURL(file);
@@ -118,37 +144,57 @@ function Accueil() {
               {imageUrl && (
                 <button
                   type="button"
-                  onClick={() => setImageUrl("")}
+                  onClick={() => {
+                    setImageUrl("");
+                    setImageFile(null);
+                    if (fileRef.current) fileRef.current.value = "";
+                  }}
                   className="font-mono text-[10px] uppercase tracking-[0.16em] text-umber-soft hover:text-clay"
                 >
                   Retirer
                 </button>
               )}
+              {!texte.trim() && !imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setComposerOpen(false)}
+                  className="font-mono text-[10px] uppercase tracking-[0.16em] text-umber-soft hover:text-clay"
+                >
+                  Annuler
+                </button>
+              )}
               <Btn
                 onClick={async () => {
                   const content = texte;
-                  const media = imageUrl;
-                  actions.publier(content, media, type);
+                  const preview = imageUrl;
+                  actions.publier(content, preview, type);
                   setTexte("");
                   setImageUrl("");
+                  setImageFile(null);
+                  if (fileRef.current) fileRef.current.value = "";
+                  setComposerOpen(false);
+                  setPublishing(true);
                   try {
+                    const media = imageFile ? await uploadPostMedia(imageFile) : preview;
                     await createRemotePost(content, type, media);
                     await refreshFeed();
                   } catch {
                     // Keep the optimistic local publication visible.
+                  } finally {
+                    setPublishing(false);
                   }
                 }}
-                disabled={!texte.trim()}
+                disabled={publishing || !texte.trim()}
                 className="ml-auto"
               >
-                Publier
+                {publishing ? "Publication..." : "Publier"}
               </Btn>
             </div>
             {imageUrl && (
               <img src={imageUrl} alt="" className="mt-3 aspect-[16/10] w-full object-cover" />
             )}
           </div>
-        </div>
+        )}
       </Panel>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -168,9 +214,16 @@ function Accueil() {
         ))}
       </div>
 
-      {visibles.map((p, i) => (
-        <PostCard key={p.id} post={p} index={i} />
-      ))}
+      {loadingFeed ? (
+        <Empty titre="Chargement" texte="Ouverture du fil d'actualité." />
+      ) : visibles.length ? (
+        visibles.map((p, i) => <PostCard key={p.id} post={p} index={i} />)
+      ) : (
+        <Empty
+          titre="Aucune publication"
+          texte="Les publications de la communauté apparaîtront ici."
+        />
+      )}
     </Shell>
   );
 }

@@ -21,6 +21,7 @@ import { actions, useApp } from "@/lib/store";
 import { membres } from "@/data/mock";
 import { cn } from "@/lib/utils";
 import { getCurrentUser, loadCurrentProfile, onAuthUserChange, signOut } from "@/lib/ifawa-auth";
+import { loadNotificationsFromSupabase } from "@/lib/ifawa-social";
 
 const mainNav = [
   { to: "/accueil", label: "Accueil", icon: Home },
@@ -57,9 +58,16 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
       if (alive && user) {
-        loadCurrentProfile().then((profile) => {
-          if (profile) actions.majProfil(profile);
-        });
+        loadCurrentProfile()
+          .then((profile) => {
+            if (profile) actions.majProfil(profile);
+          })
+          .catch(() => {});
+        loadNotificationsFromSupabase()
+          .then((items) => {
+            if (items) actions.remplacerNotifications(items);
+          })
+          .catch(() => {});
       }
     });
     const unsubscribe = onAuthUserChange((user) => {
@@ -68,9 +76,16 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
       if (user) {
-        loadCurrentProfile().then((profile) => {
-          if (profile) actions.majProfil(profile);
-        });
+        loadCurrentProfile()
+          .then((profile) => {
+            if (profile) actions.majProfil(profile);
+          })
+          .catch(() => {});
+        loadNotificationsFromSupabase()
+          .then((items) => {
+            if (items) actions.remplacerNotifications(items);
+          })
+          .catch(() => {});
       }
     });
     return () => {
@@ -149,7 +164,17 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
         </div>
       </header>
 
-      {!authChecked || !connected ? (
+      {!authChecked ? (
+        <main className="mx-auto grid min-h-[calc(100vh-3.5rem)] max-w-2xl place-items-center px-5 text-center">
+          <div>
+            <p className="label-mono mb-3 text-clay">Ouverture</p>
+            <h1 className="font-display text-[34px] uppercase leading-none">Chargement</h1>
+            <p className="mt-3 text-[14px] leading-relaxed text-umber-soft">
+              Préparation de votre espace Ifawa.
+            </p>
+          </div>
+        </main>
+      ) : !connected ? (
         <main className="mx-auto grid min-h-[calc(100vh-3.5rem)] max-w-2xl place-items-center px-5 text-center">
           <div>
             <p className="label-mono mb-3 text-clay">Connexion requise</p>

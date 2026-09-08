@@ -1,4 +1,4 @@
-import type { Post } from "@/data/mock";
+import type { Notification, Post } from "@/data/mock";
 import type { ReactionKind } from "./store";
 import { supabase } from "./supabase";
 
@@ -42,6 +42,8 @@ type ReactionRow = {
   reaction: ReactionKind;
 };
 
+const postMediaBucket = "post-media";
+
 export type NetworkMember = {
   id: string;
   pseudo: string;
@@ -49,6 +51,7 @@ export type NetworkMember = {
   signe: string;
   status?: string;
   requestId?: string;
+  relationRole?: "requester" | "addressee";
 };
 
 export type ConversationItem = {
@@ -213,6 +216,36 @@ export async function createRemotePost(text: string, type: Post["type"], mediaUr
   if (error) throw error;
 }
 
+export async function uploadPostMedia(file: File) {
+  const fallback = () =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+
+  if (!supabase) return fallback();
+  const userId = await currentUserId();
+  if (!userId) return fallback();
+
+  const extension =
+    file.name
+      .split(".")
+      .pop()
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `${userId}/post-${Date.now()}.${extension}`;
+  const { error } = await supabase.storage.from(postMediaBucket).upload(path, file, {
+    cacheControl: "3600",
+    upsert: true,
+  });
+  if (error) return fallback();
+
+  const { data } = supabase.storage.from(postMediaBucket).getPublicUrl(path);
+  return data.publicUrl || fallback();
+}
+
 export async function updateRemotePost(post: Post, text: string) {
   if (!supabase) return;
   const userId = await currentUserId();
@@ -325,7 +358,7 @@ export async function loadNetworkFromSupabase() {
         .from("profiles")
         .select("id, username, display_name, avatar_url, path")
         .neq("id", userId)
-        .limit(80),
+        .limit(500),
       supabase
         .from("connections")
         .select("id, requester_id, addressee_id, status, created_at, updated_at")
@@ -351,6 +384,12 @@ export async function loadNetworkFromSupabase() {
       signe: profile.path === "initiated" ? "Membre initié" : "Découverte",
       status: relation?.status,
       requestId: relation?.id,
+      relationRole:
+        relation?.requester_id === userId
+          ? "requester"
+          : relation?.addressee_id === userId
+            ? "addressee"
+            : undefined,
     };
   });
 
@@ -368,6 +407,24 @@ export async function loadNetworkFromSupabase() {
   };
 }
 
+export async function loadMemberProfile(profileId: string): Promise<NetworkMember | null> {
+  if (!supabase || !profileId) return null;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url, path")
+    .eq("id", profileId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const profile = data as ProfileRow;
+  return {
+    id: profile.id,
+    pseudo: displayName(profile),
+    avatarUrl: profile.avatar_url ?? undefined,
+    signe: profile.path === "initiated" ? "Membre initié" : "Découverte",
+  };
+}
+
 export async function sendRemoteConnection(addresseeId: string) {
   if (!supabase) return;
   const userId = await currentUserId();
@@ -380,16 +437,83 @@ export async function sendRemoteConnection(addresseeId: string) {
   if (error) throw error;
 }
 
+export async function removeRemoteConnection(requestId: string) {
+  if (!supabase) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const { error } = await supabase
+    .from("connections")
+    .delete()
+    .eq("id", requestId)
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+  if (error) throw error;
+}
+
 export async function answerRemoteConnection(requestId: string, status: "accepted" | "rejected") {
   if (!supabase) return;
   const userId = await currentUserId();
   if (!userId) return;
+  const { data: relation, error: relationError } = await supabase
+    .from("connections")
+    .select("id, requester_id, addressee_id")
+    .eq("id", requestId)
+    .eq("addressee_id", userId)
+    .maybeSingle();
+  if (relationError) throw relationError;
+
   const { error } = await supabase
     .from("connections")
     .update({ status })
     .eq("id", requestId)
     .eq("addressee_id", userId);
   if (error) throw error;
+
+  if (status === "accepted" && relation?.requester_id) {
+    await findOrCreateConversation(relation.requester_id);
+  }
+}
+
+export async function findOrCreateConversation(otherProfileId: string) {
+  if (!supabase) return null;
+  const userId = await currentUserId();
+  if (!userId || userId === otherProfileId) return null;
+
+  const { data: myMemberships, error: mineError } = await supabase
+    .from("conversation_members")
+    .select("conversation_id")
+    .eq("profile_id", userId);
+  if (mineError) throw mineError;
+
+  const conversationIds = [...new Set((myMemberships ?? []).map((row) => row.conversation_id))];
+  if (conversationIds.length > 0) {
+    const { data: matchingMembers, error: matchError } = await supabase
+      .from("conversation_members")
+      .select("conversation_id")
+      .eq("profile_id", otherProfileId)
+      .in("conversation_id", conversationIds);
+    if (matchError) throw matchError;
+    const existing = matchingMembers?.[0]?.conversation_id;
+    if (existing) return existing as string;
+  }
+
+  const conversationId = crypto.randomUUID();
+  const { error: conversationError } = await supabase
+    .from("conversations")
+    .insert({ id: conversationId });
+  if (conversationError) {
+    const { error: fallbackError } = await supabase
+      .from("conversations")
+      .insert({ id: conversationId, created_by: userId });
+    if (fallbackError) throw fallbackError;
+  }
+
+  const { error: membersError } = await supabase.from("conversation_members").insert([
+    { conversation_id: conversationId, profile_id: userId },
+    { conversation_id: conversationId, profile_id: otherProfileId },
+  ]);
+  if (membersError) throw membersError;
+
+  return conversationId;
 }
 
 export async function loadConversationsFromSupabase() {
@@ -478,4 +602,89 @@ export async function sendRemoteMessage(conversationId: string, text: string) {
     body: text.trim(),
   });
   if (error) throw error;
+}
+
+export async function loadNotificationsFromSupabase(): Promise<Notification[] | null> {
+  if (!supabase) return null;
+  const userId = await currentUserId();
+  if (!userId) return null;
+
+  const [{ data: connections, error: connectionsError }, { data: ownPosts, error: ownPostsError }] =
+    await Promise.all([
+      supabase
+        .from("connections")
+        .select("id, requester_id, addressee_id, status, created_at, updated_at")
+        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+        .order("updated_at", { ascending: false })
+        .limit(30),
+      supabase.from("posts").select("id, author_id").eq("author_id", userId).limit(80),
+    ]);
+  if (connectionsError) throw connectionsError;
+  if (ownPostsError) throw ownPostsError;
+
+  const connectionRows = (connections ?? []) as Array<{
+    id: string;
+    requester_id: string;
+    addressee_id: string;
+    status: string;
+    created_at: string;
+    updated_at: string | null;
+  }>;
+  const ownPostIds = ((ownPosts ?? []) as Array<{ id: string }>).map((post) => post.id);
+
+  const [{ data: comments, error: commentsError }, profiles] = await Promise.all([
+    ownPostIds.length
+      ? supabase
+          .from("post_comments")
+          .select("id, post_id, author_id, body, created_at")
+          .in("post_id", ownPostIds)
+          .neq("author_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(30)
+      : Promise.resolve({ data: [], error: null }),
+    profileMap([
+      ...connectionRows.flatMap((connection) => [connection.requester_id, connection.addressee_id]),
+    ]),
+  ]);
+  if (commentsError) throw commentsError;
+
+  const commentRows = (comments ?? []) as Array<{
+    id: string;
+    author_id: string;
+    body: string | null;
+    created_at: string;
+  }>;
+  const commentProfiles = await profileMap(commentRows.map((comment) => comment.author_id));
+
+  const connectionNotifications: Notification[] = connectionRows
+    .filter((connection) => {
+      if (connection.status === "pending") return connection.addressee_id === userId;
+      if (connection.status === "accepted") return connection.requester_id === userId;
+      return false;
+    })
+    .map((connection) => {
+      const otherId =
+        connection.requester_id === userId ? connection.addressee_id : connection.requester_id;
+      const other = displayName(profiles.get(otherId));
+      return {
+        id: `connection-${connection.id}-${connection.status}`,
+        texte:
+          connection.status === "pending"
+            ? `${other} vous a envoyé une demande de connexion.`
+            : `${other} a accepté votre demande de connexion.`,
+        heure: relativeTime(connection.updated_at ?? connection.created_at),
+        type: "connexion",
+        nonLue: true,
+      };
+    });
+
+  const commentNotifications: Notification[] = commentRows.map((comment) => ({
+    id: `comment-${comment.id}`,
+    texte: `${displayName(commentProfiles.get(comment.author_id))} a commenté votre publication.`,
+    heure: relativeTime(comment.created_at),
+    type: "commentaire",
+    nonLue: true,
+  }));
+
+  return [...connectionNotifications, ...commentNotifications].slice(0, 50);
 }

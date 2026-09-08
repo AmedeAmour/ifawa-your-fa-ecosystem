@@ -10,9 +10,16 @@ export const Route = createFileRoute("/onboarding/decouverte")({
   head: () => ({
     meta: [
       { title: "Créer mon espace de découverte — IFAWA" },
-      { name: "description", content: "Un parcours court pour les personnes non encore initiées qui souhaitent découvrir le Fa sur Ifawa." },
+      {
+        name: "description",
+        content:
+          "Un parcours court pour les personnes non encore initiées qui souhaitent découvrir le Fa sur Ifawa.",
+      },
       { property: "og:title", content: "Créer mon espace de découverte — IFAWA" },
-      { property: "og:description", content: "Trois étapes pour ouvrir votre espace de découverte du Fa." },
+      {
+        property: "og:description",
+        content: "Trois étapes pour ouvrir votre espace de découverte du Fa.",
+      },
     ],
   }),
   component: OnboardingDecouverte,
@@ -32,6 +39,7 @@ function OnboardingDecouverte() {
   const [etape, setEtape] = useState(0);
   const [pseudo, setPseudo] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [choisis, setChoisis] = useState<string[]>([]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -45,6 +53,7 @@ function OnboardingDecouverte() {
   const draft = {
     pseudo: pseudo.trim() ? (pseudo.startsWith("@") ? pseudo : `@${pseudo}`) : "@Vous",
     avatarUrl,
+    avatarFile: avatarFile ?? undefined,
     initie: false,
     interets: choisis,
     miseEnRelation: false,
@@ -78,7 +87,10 @@ function OnboardingDecouverte() {
         </div>
       </header>
       <div className="h-0.5 bg-ivory-deep">
-        <div className="h-0.5 bg-clay transition-all duration-500" style={{ width: `${((etape + 1) / 5) * 100}%` }} />
+        <div
+          className="h-0.5 bg-clay transition-all duration-500"
+          style={{ width: `${((etape + 1) / 5) * 100}%` }}
+        />
       </div>
 
       <main className="mx-auto max-w-2xl animate-rise px-5 pb-24 pt-10">
@@ -91,7 +103,12 @@ function OnboardingDecouverte() {
               Votre pseudonyme est visible par les autres membres.
             </p>
             <Field label="Pseudonyme">
-              <input className={inputCls} value={pseudo} onChange={(e) => setPseudo(e.target.value)} placeholder="Ayaba" />
+              <input
+                className={inputCls}
+                value={pseudo}
+                onChange={(e) => setPseudo(e.target.value)}
+                placeholder="Ayaba"
+              />
             </Field>
           </>
         )}
@@ -101,7 +118,9 @@ function OnboardingDecouverte() {
             <h1 className="font-display text-[32px] uppercase leading-[0.95] tracking-tight sm:text-[40px]">
               Une photo de profil ?
             </h1>
-            <p className="mb-7 mt-3 text-[14px] leading-relaxed text-umber-soft">Facultatif — vous pouvez le faire plus tard.</p>
+            <p className="mb-7 mt-3 text-[14px] leading-relaxed text-umber-soft">
+              Facultatif — vous pouvez le faire plus tard.
+            </p>
             <div className="flex items-center gap-4">
               <Monogram name={pseudo || "Vous"} imageUrl={avatarUrl} size={72} />
               <input
@@ -111,6 +130,7 @@ function OnboardingDecouverte() {
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (!file) return;
+                  setAvatarFile(file);
                   const reader = new FileReader();
                   reader.onload = () => setAvatarUrl(String(reader.result));
                   reader.readAsDataURL(file);
@@ -125,7 +145,9 @@ function OnboardingDecouverte() {
             <h1 className="font-display text-[32px] uppercase leading-[0.95] tracking-tight sm:text-[40px]">
               Qu'aimeriez-vous découvrir ?
             </h1>
-            <p className="mb-7 mt-3 text-[14px] leading-relaxed text-umber-soft">Facultatif — pour adapter votre espace de découverte.</p>
+            <p className="mb-7 mt-3 text-[14px] leading-relaxed text-umber-soft">
+              Facultatif — pour adapter votre espace de découverte.
+            </p>
             <div className="flex flex-wrap gap-2">
               {interets.map((i) => (
                 <Chip key={i} active={choisis.includes(i)} onClick={() => toggle(i)}>
@@ -143,8 +165,8 @@ function OnboardingDecouverte() {
               Votre espace de découverte est prêt.
             </h1>
             <p className="mt-4 max-w-[44ch] text-[14px] leading-relaxed text-ivory/75">
-              Vous avez accès à la bibliothèque, au fil d'actualité, à la communauté et aux services.
-              Vous pourrez indiquer votre initiation à tout moment depuis votre profil.
+              Vous avez accès à la bibliothèque, au fil d'actualité, à la communauté et aux
+              services. Vous pourrez indiquer votre initiation à tout moment depuis votre profil.
             </p>
           </div>
         )}
@@ -161,17 +183,31 @@ function OnboardingDecouverte() {
               <div className="bg-forest p-5 text-ivory">
                 <p className="font-display text-[26px] uppercase leading-none">Compte créé</p>
                 <p className="mt-3 text-[14px] leading-relaxed text-ivory/75">
-                  Vérifiez votre email, puis connectez-vous pour accéder à votre espace Ifawa.
+                  Connectez-vous pour accéder à votre espace Ifawa.
                 </p>
-                <Btn to="/connexion" className="mt-5" variant="outline">Se connecter</Btn>
+                <Btn to="/connexion" className="mt-5" variant="outline">
+                  Se connecter
+                </Btn>
               </div>
             ) : (
               <div className="space-y-4">
                 <Field label="Adresse email">
-                  <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" />
+                  <input
+                    className={inputCls}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    type="email"
+                    autoComplete="email"
+                  />
                 </Field>
                 <Field label="Mot de passe">
-                  <input className={inputCls} value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="new-password" />
+                  <input
+                    className={inputCls}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type="password"
+                    autoComplete="new-password"
+                  />
                 </Field>
                 {error && <p className="bg-clay/10 px-3 py-2 text-[13px] text-clay">{error}</p>}
               </div>
@@ -187,7 +223,11 @@ function OnboardingDecouverte() {
             <ChevronLeft className="size-3.5" /> Retour
           </button>
           {!confirmation && (
-            <Btn onClick={suivant} disabled={etape === 4 && (loading || !email.trim() || password.length < 6)} className={cn(etape === 4 && "px-8")}>
+            <Btn
+              onClick={suivant}
+              disabled={etape === 4 && (loading || !email.trim() || password.length < 6)}
+              className={cn(etape === 4 && "px-8")}
+            >
               {etape === 4 ? (loading ? "Création..." : "Créer mon compte") : "Continuer"}
             </Btn>
           )}

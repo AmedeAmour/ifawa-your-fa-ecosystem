@@ -11,22 +11,39 @@ export const Route = createFileRoute("/onboarding/initie")({
   head: () => ({
     meta: [
       { title: "Créer mon profil initié — IFAWA" },
-      { name: "description", content: "Renseignez votre signe, votre année d'initiation et votre témoignage pour rejoindre la communauté Ifawa." },
+      {
+        name: "description",
+        content:
+          "Renseignez votre signe, votre année d'initiation et votre témoignage pour rejoindre la communauté Ifawa.",
+      },
       { property: "og:title", content: "Créer mon profil initié — IFAWA" },
-      { property: "og:description", content: "Un parcours guidé en sept étapes pour les personnes déjà initiées." },
+      {
+        property: "og:description",
+        content: "Un parcours guidé en sept étapes pour les personnes déjà initiées.",
+      },
     ],
   }),
   component: OnboardingInitie,
 });
 
 const satisfactions = ["Très insatisfait", "Insatisfait", "Mitigé", "Satisfait", "Très satisfait"];
-const etapes = ["Pseudonyme", "Photo", "Signe Fa", "Année", "Satisfaction", "Témoignage", "Mise en relation", "Compte"];
+const etapes = [
+  "Pseudonyme",
+  "Photo",
+  "Signe Fa",
+  "Année",
+  "Satisfaction",
+  "Témoignage",
+  "Mise en relation",
+  "Compte",
+];
 
 function OnboardingInitie() {
   const navigate = useNavigate();
   const [etape, setEtape] = useState(0);
   const [pseudo, setPseudo] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [signe, setSigne] = useState("Gbé Mêdji");
   const [annee, setAnnee] = useState("2018");
   const [satisfaction, setSatisfaction] = useState("Satisfait");
@@ -41,6 +58,7 @@ function OnboardingInitie() {
   const draft = {
     pseudo: pseudo.trim() ? (pseudo.startsWith("@") ? pseudo : `@${pseudo}`) : "@Vous",
     avatarUrl,
+    avatarFile: avatarFile ?? undefined,
     initie: true,
     signe,
     annee,
@@ -91,15 +109,26 @@ function OnboardingInitie() {
 
         <div key={etape} className="animate-rise">
           {etape === 0 && (
-            <Step titre="Comment souhaitez-vous être appelé(e) ?" texte="Votre pseudonyme est visible par les autres membres. Votre identité réelle n'est jamais demandée.">
+            <Step
+              titre="Comment souhaitez-vous être appelé(e) ?"
+              texte="Votre pseudonyme est visible par les autres membres. Votre identité réelle n'est jamais demandée."
+            >
               <Field label="Pseudonyme">
-                <input className={inputCls} value={pseudo} onChange={(e) => setPseudo(e.target.value)} placeholder="Sègbo23" />
+                <input
+                  className={inputCls}
+                  value={pseudo}
+                  onChange={(e) => setPseudo(e.target.value)}
+                  placeholder="Sègbo23"
+                />
               </Field>
             </Step>
           )}
 
           {etape === 1 && (
-            <Step titre="Ajoutez une photo de profil" texte="Cette étape est facultative. Vous pourrez la compléter plus tard.">
+            <Step
+              titre="Ajoutez une photo de profil"
+              texte="Cette étape est facultative. Vous pourrez la compléter plus tard."
+            >
               <div className="flex items-center gap-4">
                 <Monogram name={pseudo || "Vous"} imageUrl={avatarUrl} size={72} />
                 <div className="space-y-2">
@@ -110,19 +139,25 @@ function OnboardingInitie() {
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (!file) return;
+                      setAvatarFile(file);
                       const reader = new FileReader();
                       reader.onload = () => setAvatarUrl(String(reader.result));
                       reader.readAsDataURL(file);
                     }}
                   />
-                  <p className="text-[12px] text-umber-soft">Un monogramme est utilisé par défaut.</p>
+                  <p className="text-[12px] text-umber-soft">
+                    Un monogramme est utilisé par défaut.
+                  </p>
                 </div>
               </div>
             </Step>
           )}
 
           {etape === 2 && (
-            <Step titre="Quel est votre signe Fa ?" texte="Sélectionnez le signe reçu lors de votre initiation.">
+            <Step
+              titre="Quel est votre signe Fa ?"
+              texte="Sélectionnez le signe reçu lors de votre initiation."
+            >
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {signes.map((s) => (
                   <button
@@ -130,11 +165,22 @@ function OnboardingInitie() {
                     onClick={() => setSigne(s.nom)}
                     className={cn(
                       "p-3 text-left transition-colors",
-                      signe === s.nom ? "bg-forest text-ivory" : "bg-ivory-deep/50 hover:bg-ivory-deep",
+                      signe === s.nom
+                        ? "bg-forest text-ivory"
+                        : "bg-ivory-deep/50 hover:bg-ivory-deep",
                     )}
                   >
-                    <span className={cn("label-mono block", signe === s.nom ? "text-brass" : "text-clay")}>{s.numero}</span>
-                    <span className="mt-1 block font-display text-[16px] uppercase leading-tight">{s.nom}</span>
+                    <span
+                      className={cn(
+                        "label-mono block",
+                        signe === s.nom ? "text-brass" : "text-clay",
+                      )}
+                    >
+                      {s.numero}
+                    </span>
+                    <span className="mt-1 block font-display text-[16px] uppercase leading-tight">
+                      {s.nom}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -142,15 +188,26 @@ function OnboardingInitie() {
           )}
 
           {etape === 3 && (
-            <Step titre="En quelle année avez-vous été initié(e) ?" texte="Cette information peut rester privée dans vos paramètres.">
+            <Step
+              titre="En quelle année avez-vous été initié(e) ?"
+              texte="Cette information peut rester privée dans vos paramètres."
+            >
               <Field label="Année d'initiation">
-                <input className={inputCls} value={annee} onChange={(e) => setAnnee(e.target.value)} inputMode="numeric" />
+                <input
+                  className={inputCls}
+                  value={annee}
+                  onChange={(e) => setAnnee(e.target.value)}
+                  inputMode="numeric"
+                />
               </Field>
             </Step>
           )}
 
           {etape === 4 && (
-            <Step titre="Comment vous sentez-vous depuis votre initiation ?" texte="Votre réponse aide la communauté à mieux se comprendre.">
+            <Step
+              titre="Comment vous sentez-vous depuis votre initiation ?"
+              texte="Votre réponse aide la communauté à mieux se comprendre."
+            >
               <div className="space-y-2">
                 {satisfactions.map((s) => (
                   <button
@@ -158,7 +215,9 @@ function OnboardingInitie() {
                     onClick={() => setSatisfaction(s)}
                     className={cn(
                       "flex w-full items-center justify-between px-4 py-3 text-left text-[14px] transition-colors",
-                      satisfaction === s ? "bg-umber text-ivory" : "bg-ivory-deep/50 hover:bg-ivory-deep",
+                      satisfaction === s
+                        ? "bg-umber text-ivory"
+                        : "bg-ivory-deep/50 hover:bg-ivory-deep",
                     )}
                   >
                     {s}
@@ -170,7 +229,10 @@ function OnboardingInitie() {
           )}
 
           {etape === 5 && (
-            <Step titre="Votre témoignage" texte="Parlez-nous brièvement de votre expérience depuis votre initiation.">
+            <Step
+              titre="Votre témoignage"
+              texte="Parlez-nous brièvement de votre expérience depuis votre initiation."
+            >
               <Field label="Témoignage">
                 <textarea
                   className={cn(inputCls, "min-h-32 resize-y")}
@@ -183,7 +245,10 @@ function OnboardingInitie() {
           )}
 
           {etape === 6 && (
-            <Step titre="Souhaitez-vous entrer en relation avec d'autres membres ?" texte="Vous pourrez modifier ce choix à tout moment dans vos paramètres.">
+            <Step
+              titre="Souhaitez-vous entrer en relation avec d'autres membres ?"
+              texte="Vous pourrez modifier ce choix à tout moment dans vos paramètres."
+            >
               <div className="grid gap-3 sm:grid-cols-2">
                 <Choix
                   actif={relation}
@@ -202,22 +267,39 @@ function OnboardingInitie() {
           )}
 
           {etape === 7 && (
-            <Step titre="Créez votre compte" texte="Votre parcours est prêt. Indiquez seulement votre adresse email et un mot de passe pour enregistrer votre espace.">
+            <Step
+              titre="Créez votre compte"
+              texte="Votre parcours est prêt. Indiquez seulement votre adresse email et un mot de passe pour enregistrer votre espace."
+            >
               {confirmation ? (
                 <div className="bg-forest p-5 text-ivory">
                   <p className="font-display text-[26px] uppercase leading-none">Compte créé</p>
                   <p className="mt-3 text-[14px] leading-relaxed text-ivory/75">
-                    Vérifiez votre email, puis connectez-vous pour accéder à votre espace Ifawa.
+                    Connectez-vous pour accéder à votre espace Ifawa.
                   </p>
-                  <Btn to="/connexion" className="mt-5" variant="outline">Se connecter</Btn>
+                  <Btn to="/connexion" className="mt-5" variant="outline">
+                    Se connecter
+                  </Btn>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <Field label="Adresse email">
-                    <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" />
+                    <input
+                      className={inputCls}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      type="email"
+                      autoComplete="email"
+                    />
                   </Field>
                   <Field label="Mot de passe">
-                    <input className={inputCls} value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="new-password" />
+                    <input
+                      className={inputCls}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      type="password"
+                      autoComplete="new-password"
+                    />
                   </Field>
                   {error && <p className="bg-clay/10 px-3 py-2 text-[13px] text-clay">{error}</p>}
                 </div>
@@ -234,12 +316,19 @@ function OnboardingInitie() {
             <ChevronLeft className="size-3.5" /> Retour
           </button>
           <div className="flex items-center gap-2">
-            {etape < etapes.length - 1 && (
-              <Chip onClick={() => setEtape(etape + 1)}>Passer</Chip>
-            )}
+            {etape < etapes.length - 1 && <Chip onClick={() => setEtape(etape + 1)}>Passer</Chip>}
             {!confirmation && (
-              <Btn onClick={suivant} disabled={etape === etapes.length - 1 && (loading || !email.trim() || password.length < 6)}>
-                {etape === etapes.length - 1 ? (loading ? "Création..." : "Créer mon compte") : "Continuer"}
+              <Btn
+                onClick={suivant}
+                disabled={
+                  etape === etapes.length - 1 && (loading || !email.trim() || password.length < 6)
+                }
+              >
+                {etape === etapes.length - 1
+                  ? loading
+                    ? "Création..."
+                    : "Créer mon compte"
+                  : "Continuer"}
               </Btn>
             )}
           </div>
@@ -249,24 +338,54 @@ function OnboardingInitie() {
   );
 }
 
-function Step({ titre, texte, children }: { titre: string; texte: string; children: React.ReactNode }) {
+function Step({
+  titre,
+  texte,
+  children,
+}: {
+  titre: string;
+  texte: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <h1 className="font-display text-[30px] uppercase leading-[0.95] tracking-tight sm:text-[38px]">{titre}</h1>
+      <h1 className="font-display text-[30px] uppercase leading-[0.95] tracking-tight sm:text-[38px]">
+        {titre}
+      </h1>
       <p className="mb-7 mt-3 max-w-[46ch] text-[14px] leading-relaxed text-umber-soft">{texte}</p>
       {children}
     </div>
   );
 }
 
-function Choix({ actif, onClick, titre, texte }: { actif: boolean; onClick: () => void; titre: string; texte: string }) {
+function Choix({
+  actif,
+  onClick,
+  titre,
+  texte,
+}: {
+  actif: boolean;
+  onClick: () => void;
+  titre: string;
+  texte: string;
+}) {
   return (
     <button
       onClick={onClick}
-      className={cn("p-5 text-left transition-colors", actif ? "bg-forest text-ivory" : "bg-ivory-deep/50 hover:bg-ivory-deep")}
+      className={cn(
+        "p-5 text-left transition-colors",
+        actif ? "bg-forest text-ivory" : "bg-ivory-deep/50 hover:bg-ivory-deep",
+      )}
     >
       <p className="font-display text-[24px] uppercase leading-none">{titre}</p>
-      <p className={cn("mt-2 text-[13px] leading-relaxed", actif ? "text-ivory/75" : "text-umber-soft")}>{texte}</p>
+      <p
+        className={cn(
+          "mt-2 text-[13px] leading-relaxed",
+          actif ? "text-ivory/75" : "text-umber-soft",
+        )}
+      >
+        {texte}
+      </p>
     </button>
   );
 }

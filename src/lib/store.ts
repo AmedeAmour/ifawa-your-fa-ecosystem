@@ -1,11 +1,5 @@
 import { useSyncExternalStore } from "react";
-import {
-  posts as seedPosts,
-  type Post,
-  demandesConnexion,
-  notifications as seedNotifications,
-  type Notification,
-} from "@/data/mock";
+import { type Post, demandesConnexion, type Notification } from "@/data/mock";
 
 export type ReactionKind = "like" | "love" | "laugh" | "support";
 
@@ -47,9 +41,9 @@ const initial: AppState = {
     miseEnRelation: true,
     interets: [],
   },
-  posts: seedPosts,
+  posts: [],
   reactions: {},
-  notifications: seedNotifications,
+  notifications: [],
   connexions: ["segbo23", "ayaba", "todan"],
   demandes: demandesConnexion.map((d) => ({ id: d.id, etat: "attente" as const })),
   demandesEnvoyees: [],
@@ -62,7 +56,14 @@ function readInitialState() {
   const raw = window.localStorage.getItem(storageKey);
   if (!raw) return initial;
   try {
-    return { ...initial, ...(JSON.parse(raw) as Partial<AppState>) };
+    const persisted = JSON.parse(raw) as Partial<AppState>;
+    return {
+      ...initial,
+      ...persisted,
+      posts: initial.posts,
+      reactions: initial.reactions,
+      notifications: initial.notifications,
+    };
   } catch {
     window.localStorage.removeItem(storageKey);
     return initial;
@@ -112,6 +113,21 @@ export const actions = {
       posts,
       reactions: reactions ?? s.reactions,
     }));
+  },
+  remplacerNotifications(notifications: Notification[]) {
+    setState((s) => {
+      const readIds = new Set(
+        s.notifications
+          .filter((notification) => !notification.nonLue)
+          .map((notification) => notification.id),
+      );
+      return {
+        notifications: notifications.map((notification) => ({
+          ...notification,
+          nonLue: notification.nonLue && !readIds.has(notification.id),
+        })),
+      };
+    });
   },
   publier(contenu: string, mediaUrl = "", type: Post["type"] = "Membre") {
     if (!contenu.trim()) return;

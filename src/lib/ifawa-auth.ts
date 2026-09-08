@@ -8,12 +8,14 @@ export type OnboardingDraft = Partial<Profil> & {
   pseudo: string;
   initie: boolean;
   username?: string;
+  avatarFile?: File;
 };
 
 export type AuthResult =
   { status: "signed-in"; user: User } | { status: "confirmation-required"; user: User | null };
 
 const pendingDraftKey = "ifawa.pending-onboarding";
+const avatarBucket = "profile-media";
 
 export function normalizeUsername(value: string, fallback = "membre") {
   const base = (value || fallback)
@@ -84,6 +86,12 @@ function metadataDraft(user: User): OnboardingDraft | null {
   };
 }
 
+async function draftWithStoredAvatar(user: User, draft: OnboardingDraft): Promise<OnboardingDraft> {
+  if (!draft.avatarFile) return draft;
+  const avatarUrl = await uploadProfileAvatar(draft.avatarFile);
+  return { ...draft, avatarUrl, avatarFile: undefined };
+}
+
 export async function createOrUpdateProfile(user: User, draft: OnboardingDraft) {
   if (!supabase) throw new Error("La connexion à la plateforme n'est pas configurée.");
 
@@ -91,16 +99,21 @@ export async function createOrUpdateProfile(user: User, draft: OnboardingDraft) 
     draft.username ?? normalizeUsername(draft.pseudo, user.email?.split("@")[0] ?? "membre");
   const displayName = draft.pseudo?.trim() || username;
   const path = pathFromDraft(draft);
+  const { data: existingProfile } = await supabase
+    .from("profiles")
+    .select("avatar_url, relation_enabled")
+    .eq("id", user.id)
+    .maybeSingle();
 
   const { error: profileError } = await supabase.from("profiles").upsert(
     {
       id: user.id,
       username,
       display_name: displayName,
-      avatar_url: draft.avatarUrl ?? null,
-      cover_url: draft.coverUrl ?? null,
+      avatar_url: draft.avatarUrl ?? existingProfile?.avatar_url ?? null,
+      cover_url: null,
       path,
-      relation_enabled: draft.miseEnRelation ?? false,
+      relation_enabled: draft.miseEnRelation ?? existingProfile?.relation_enabled ?? false,
       is_profile_complete: true,
     },
     { onConflict: "id" },
@@ -160,11 +173,20 @@ export async function signUpWithOnboarding(
   if (error) throw error;
 
   if (data.session && data.user) {
-    await createOrUpdateProfile(data.user, accountDraft);
+    await createOrUpdateProfile(data.user, await draftWithStoredAvatar(data.user, accountDraft));
     return { status: "signed-in", user: data.user };
   }
 
-  storePendingDraft(cleanEmail, accountDraft);
+  const signedIn = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+  if (!signedIn.error && signedIn.data.user) {
+    await createOrUpdateProfile(
+      signedIn.data.user,
+      await draftWithStoredAvatar(signedIn.data.user, accountDraft),
+    );
+    return { status: "signed-in", user: signedIn.data.user };
+  }
+
+  storePendingDraft(cleanEmail, { ...accountDraft, avatarFile: undefined });
   return { status: "confirmation-required", user: data.user };
 }
 
@@ -214,7 +236,6 @@ export async function loadCurrentProfile(): Promise<Partial<Profil> | null> {
   return {
     pseudo: profile.display_name || `@${profile.username}`,
     avatarUrl: profile.avatar_url || undefined,
-    coverUrl: profile.cover_url || undefined,
     initie: profile.path === "initiated",
     miseEnRelation: profile.relation_enabled,
     signe: sign?.name ?? undefined,
@@ -227,7 +248,7 @@ export async function loadCurrentProfile(): Promise<Partial<Profil> | null> {
 }
 
 export async function updateProfileSettings(
-  profile: Pick<Profil, "pseudo" | "miseEnRelation" | "avatarUrl" | "coverUrl">,
+  profile: Pick<Profil, "pseudo" | "miseEnRelation" | "avatarUrl">,
 ) {
   if (!supabase) return;
   const { data: userData } = await supabase.auth.getUser();
@@ -237,7 +258,6 @@ export async function updateProfileSettings(
     .update({
       display_name: profile.pseudo.trim(),
       avatar_url: profile.avatarUrl ?? null,
-      cover_url: profile.coverUrl ?? null,
       relation_enabled: profile.miseEnRelation,
     })
     .eq("id", userData.user.id);
@@ -245,6 +265,38 @@ export async function updateProfileSettings(
 }
 
 export const updateProfileMedia = updateProfileSettings;
+
+export async function uploadProfileAvatar(file: File) {
+  if (!supabase) return readFileAsDataUrl(file);
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData.user?.id;
+  if (!userId) return readFileAsDataUrl(file);
+
+  const extension =
+    file.name
+      .split(".")
+      .pop()
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `${userId}/avatar-${Date.now()}.${extension}`;
+  const { error } = await supabase.storage.from(avatarBucket).upload(path, file, {
+    cacheControl: "3600",
+    upsert: true,
+  });
+  if (error) return readFileAsDataUrl(file);
+
+  const { data } = supabase.storage.from(avatarBucket).getPublicUrl(path);
+  return data.publicUrl || readFileAsDataUrl(file);
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 export async function signOut() {
   if (!supabase) return;
