@@ -1,5 +1,5 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import {
   avisPraticiens,
-  carnet,
   consultationsAdmin,
   contributionsAdmin,
   formulesAccompagnement,
@@ -31,7 +30,18 @@ import {
 } from "@/data/mock";
 import { actions, useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { fetchServiceCatalog, type ServiceCard } from "@/lib/ifawa-services";
+import {
+  createContribution,
+  loadMyContributions,
+  type ContributionItem,
+} from "@/lib/ifawa-contributions";
+import {
+  createServiceRequest,
+  fetchServiceCatalog,
+  loadMyServiceRequests,
+  type ServiceCard,
+  type ServiceRequest,
+} from "@/lib/ifawa-services";
 import { loadCurrentProfile, updateProfileSettings, uploadProfileAvatar } from "@/lib/ifawa-auth";
 import {
   answerRemoteConnection,
@@ -82,6 +92,29 @@ const serviceCopy: Record<string, { title: string; kicker: string; intro: string
     intro: "Un cadre de suivi régulier avec carnet, questions et comptes rendus.",
   },
 };
+
+const serviceRequestLabels: Record<string, string> = {
+  fa_consultation: "Consultation Fa",
+  initiation_request: "Demande d'initiation",
+  sign_deep_study: "Étude approfondie du signe",
+  fa_accompaniment: "Accompagnement Fa",
+};
+
+const serviceStatusLabels: Record<string, string> = {
+  submitted: "Reçue",
+  reviewing: "En analyse",
+  processing: "En traitement",
+  completed: "Terminée",
+  cancelled: "Annulée",
+};
+
+function formatShortDate(value: string) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
 
 export function ReseauPage() {
   const navigate = useNavigate();
@@ -681,7 +714,39 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
       : slug === "accompagnement"
         ? formulesAccompagnement
         : formulesConsultation;
-  const [sent, setSent] = useState(false);
+  const [selectedFormula, setSelectedFormula] = useState(formules[0]?.nom ?? "");
+  const [subject, setSubject] = useState("");
+  const [deadline, setDeadline] = useState("");
+  const [details, setDetails] = useState("");
+  const [status, setStatus] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submitRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!subject.trim()) {
+      setStatus("Indiquez l'objet de votre demande.");
+      return;
+    }
+    setSubmitting(true);
+    setStatus("Enregistrement de la demande...");
+    try {
+      const reference = await createServiceRequest({
+        serviceSlug: slug,
+        formulaName: selectedFormula,
+        subject: subject.trim(),
+        deadline: deadline.trim(),
+        details: details.trim(),
+      });
+      setSubject("");
+      setDeadline("");
+      setDetails("");
+      setStatus(`Demande enregistrée. Référence ${reference.slice(0, 8).toUpperCase()}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "La demande n'a pas pu être enregistrée.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <Shell>
@@ -697,53 +762,72 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
       </PageTitle>
       <div className="grid gap-4 md:grid-cols-3">
         {formules.map((formule) => (
-          <Panel key={formule.nom} tone={formule.recommande ? "forest" : "paper"}>
-            <Kicker className={formule.recommande ? "text-brass" : undefined}>
-              {formule.recommande ? "Recommandé" : "Formule"}
-            </Kicker>
-            <h2 className="mt-3 font-display text-[25px] uppercase leading-none">{formule.nom}</h2>
-            <p
+          <button
+            key={formule.nom}
+            type="button"
+            onClick={() => setSelectedFormula(formule.nom)}
+            className="text-left"
+          >
+            <Panel
+              tone={selectedFormula === formule.nom || formule.recommande ? "forest" : "paper"}
               className={cn(
-                "mt-3 text-[13px]",
-                formule.recommande ? "text-ivory/75" : "text-umber-soft",
+                "h-full transition-transform hover:-translate-y-0.5",
+                selectedFormula === formule.nom && "ring-2 ring-clay/40",
               )}
             >
-              {"delai" in formule ? formule.delai : formule.suivi}
-            </p>
-            <p className="mt-4 font-semibold">{formule.prix}</p>
-          </Panel>
+              <Kicker className={formule.recommande ? "text-brass" : undefined}>
+                {formule.recommande ? "Recommandé" : "Formule"}
+              </Kicker>
+              <h2 className="mt-3 font-display text-[25px] uppercase leading-none">
+                {formule.nom}
+              </h2>
+              <p
+                className={cn(
+                  "mt-3 text-[13px]",
+                  formule.recommande ? "text-ivory/75" : "text-umber-soft",
+                )}
+              >
+                {"delai" in formule ? formule.delai : formule.suivi}
+              </p>
+              <p className="mt-4 font-semibold">{formule.prix}</p>
+            </Panel>
+          </button>
         ))}
       </div>
       <Panel className="mt-5">
         <SectionHeader icon={FileText} title="Créer la demande" />
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setSent(true);
-          }}
-          className="grid gap-3 sm:grid-cols-2"
-        >
+        <form onSubmit={submitRequest} className="grid gap-3 sm:grid-cols-2">
           <Field label="Objet">
-            <input className={inputCls} placeholder="Votre préoccupation" />
+            <input
+              className={inputCls}
+              placeholder="Votre préoccupation"
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+            />
           </Field>
           <Field label="Délai">
-            <input className={inputCls} placeholder="Standard, prioritaire…" />
-          </Field>
-          <Field label="Détails">
-            <textarea
-              className={cn(inputCls, "min-h-28 sm:col-span-2")}
-              placeholder="Décrivez la demande…"
+            <input
+              className={inputCls}
+              placeholder="Standard, prioritaire..."
+              value={deadline}
+              onChange={(event) => setDeadline(event.target.value)}
             />
           </Field>
           <div className="sm:col-span-2">
-            <Btn type="submit" className="mt-1">
-              Envoyer la demande
+            <Field label="Détails">
+              <textarea
+                className={cn(inputCls, "min-h-28")}
+                placeholder="Décrivez la demande..."
+                value={details}
+                onChange={(event) => setDetails(event.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Btn type="submit" className="mt-1" disabled={submitting}>
+              {submitting ? "Envoi..." : "Envoyer la demande"}
             </Btn>
-            {sent && (
-              <p className="mt-3 text-[13px] text-umber-soft">
-                Votre demande est enregistrée dans le suivi.
-              </p>
-            )}
+            {status && <p className="mt-3 text-[13px] text-umber-soft">{status}</p>}
           </div>
         </form>
       </Panel>
@@ -877,39 +961,75 @@ export function RecherchePage() {
 }
 
 export function ContribuerPage() {
-  const [sent, setSent] = useState(false);
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("");
+  const [body, setBody] = useState("");
+  const [status, setStatus] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submitContribution(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!title.trim() || !body.trim()) {
+      setStatus("Renseignez le signe concerné et la contribution.");
+      return;
+    }
+    setSubmitting(true);
+    setStatus("Envoi de la contribution...");
+    try {
+      const reference = await createContribution({
+        title: title.trim(),
+        category: category.trim(),
+        body: body.trim(),
+      });
+      setTitle("");
+      setCategory("");
+      setBody("");
+      setStatus(`Contribution soumise. Référence ${reference.slice(0, 8).toUpperCase()}.`);
+    } catch (error) {
+      setStatus(
+        error instanceof Error ? error.message : "La contribution n'a pas pu être enregistrée.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <Shell>
       <PageTitle kicker="Contribution">Proposer à la bibliothèque</PageTitle>
       <Panel>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setSent(true);
-          }}
-          className="grid gap-4 sm:grid-cols-2"
-        >
+        <form onSubmit={submitContribution} className="grid gap-4 sm:grid-cols-2">
           <Field label="Signe concerné">
-            <input className={inputCls} placeholder="Ex. Gbé Mêdji" />
+            <input
+              className={inputCls}
+              placeholder="Ex. Gbé Mêdji"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
           </Field>
           <Field label="Catégorie">
-            <input className={inputCls} placeholder="Enseignement, variante, interdit…" />
-          </Field>
-          <Field label="Contribution">
-            <textarea
-              className={cn(inputCls, "min-h-36 sm:col-span-2")}
-              placeholder="Décrivez l'information à faire relire."
+            <input
+              className={inputCls}
+              placeholder="Enseignement, variante, interdit..."
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
             />
           </Field>
           <div className="sm:col-span-2">
-            <Btn type="submit" className="mt-1">
-              Soumettre à validation
+            <Field label="Contribution">
+              <textarea
+                className={cn(inputCls, "min-h-36")}
+                placeholder="Décrivez l'information à faire relire."
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Btn type="submit" className="mt-1" disabled={submitting}>
+              {submitting ? "Envoi..." : "Soumettre à validation"}
             </Btn>
-            {sent && (
-              <p className="mt-3 text-[13px] text-umber-soft">
-                Contribution reçue. Elle apparaît dans le circuit de validation.
-              </p>
-            )}
+            {status && <p className="mt-3 text-[13px] text-umber-soft">{status}</p>}
           </div>
         </form>
       </Panel>
@@ -919,39 +1039,128 @@ export function ContribuerPage() {
 
 export function DossierPage() {
   const { profil } = useApp();
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    loadMyServiceRequests()
+      .then((items) => {
+        if (active) setRequests(items);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <Shell>
       <PageTitle kicker="Dossier Fa personnel">Votre espace privé</PageTitle>
       <div className="grid gap-4 sm:grid-cols-2">
-        {["Signe Fa", "Initiation", "Consultations", "Études", "Interventions", "Documents"].map(
-          (item) => (
-            <Panel key={item}>
-              <Kicker>{item}</Kicker>
-              <p className="mt-3 text-[14px] text-umber-soft">
-                {item === "Signe Fa"
-                  ? profil.signe
-                  : "Informations à compléter depuis votre espace."}
-              </p>
-            </Panel>
-          ),
-        )}
+        {[
+          ["Signe Fa", profil.signe],
+          ["Demandes", loading ? "Chargement..." : `${requests.length} dossier(s)`],
+          [
+            "Dernière demande",
+            requests[0]
+              ? `${serviceRequestLabels[requests[0].serviceType] ?? requests[0].serviceType} · ${
+                  serviceStatusLabels[requests[0].status] ?? requests[0].status
+                }`
+              : "Aucune demande enregistrée",
+          ],
+          ["Documents", "Les pièces liées aux dossiers apparaîtront ici."],
+        ].map(([item, value]) => (
+          <Panel key={item}>
+            <Kicker>{item}</Kicker>
+            <p className="mt-3 text-[14px] text-umber-soft">{value}</p>
+          </Panel>
+        ))}
+      </div>
+      <div className="mt-5 space-y-3">
+        {requests.map((request) => (
+          <Panel key={request.id}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <Kicker>{formatShortDate(request.createdAt)}</Kicker>
+                <h2 className="mt-2 font-display text-[22px] uppercase leading-none">
+                  {request.subject}
+                </h2>
+                <p className="mt-2 text-[13px] text-umber-soft">
+                  {serviceRequestLabels[request.serviceType] ?? request.serviceType}
+                  {request.formulaName ? ` · ${request.formulaName}` : ""}
+                </p>
+              </div>
+              <Chip>{serviceStatusLabels[request.status] ?? request.status}</Chip>
+            </div>
+          </Panel>
+        ))}
       </div>
     </Shell>
   );
 }
 
 export function CarnetPage() {
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [contributions, setContributions] = useState<ContributionItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([loadMyServiceRequests(), loadMyContributions()])
+      .then(([nextRequests, nextContributions]) => {
+        if (!active) return;
+        setRequests(nextRequests);
+        setContributions(nextContributions);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const entries = [
+    ...requests.map((item) => ({
+      id: `service-${item.id}`,
+      date: formatShortDate(item.createdAt),
+      titre: item.subject,
+      texte: `${serviceRequestLabels[item.serviceType] ?? item.serviceType} · ${
+        serviceStatusLabels[item.status] ?? item.status
+      }`,
+    })),
+    ...contributions.map((item) => ({
+      id: `contribution-${item.id}`,
+      date: formatShortDate(item.createdAt),
+      titre: item.title,
+      texte: `${item.categoryLabel} · ${item.status}`,
+    })),
+  ];
+
   return (
     <Shell>
       <PageTitle kicker="Carnet de parcours">Historique personnel</PageTitle>
       <div className="space-y-4">
-        {carnet.map((item) => (
-          <Panel key={`${item.date}-${item.titre}`}>
+        {entries.map((item) => (
+          <Panel key={item.id}>
             <Kicker>{item.date}</Kicker>
             <h2 className="mt-2 font-display text-[23px] uppercase leading-none">{item.titre}</h2>
             <p className="mt-2 text-[13px] leading-relaxed text-umber-soft">{item.texte}</p>
           </Panel>
         ))}
+        {entries.length === 0 && (
+          <Empty
+            titre={loading ? "Chargement du carnet" : "Carnet vide"}
+            texte={
+              loading
+                ? "Votre activité personnelle est en cours de récupération."
+                : "Vos demandes et contributions apparaîtront ici."
+            }
+          />
+        )}
       </div>
     </Shell>
   );
@@ -1144,33 +1353,82 @@ export function ParametresPage() {
 }
 
 export function SuiviPage() {
+  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    loadMyServiceRequests()
+      .then((items) => {
+        if (active) setRequests(items);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const current = requests[0];
+
   return (
     <Shell>
       <PageTitle kicker="Suivi">Consultation en cours</PageTitle>
-      <Panel tone="forest" className="mb-5">
-        <p className="font-display text-[28px] uppercase leading-none">CS-2041</p>
-        <p className="mt-2 text-[13px] text-ivory/70">Prioritaire · En traitement</p>
-      </Panel>
-      <div className="space-y-3">
-        {timelineConsultation.map((item) => (
-          <Panel key={item.etape} tone={item.actuel ? "deep" : "paper"}>
-            <div className="flex items-center gap-3">
-              <span
-                className={cn(
-                  "grid size-8 place-items-center rounded-full",
-                  item.fait ? "bg-clay text-ivory" : "bg-ivory-deep text-umber-soft",
-                )}
-              >
-                {item.fait ? <Check className="size-4" /> : "•"}
-              </span>
-              <div>
-                <p className="font-semibold">{item.etape}</p>
-                <p className="label-mono text-umber-soft">{item.date}</p>
-              </div>
-            </div>
+      {current ? (
+        <>
+          <Panel tone="forest" className="mb-5">
+            <p className="font-display text-[28px] uppercase leading-none">
+              {current.id.slice(0, 8).toUpperCase()}
+            </p>
+            <p className="mt-2 text-[13px] text-ivory/70">
+              {serviceRequestLabels[current.serviceType] ?? current.serviceType} ·{" "}
+              {serviceStatusLabels[current.status] ?? current.status}
+            </p>
           </Panel>
-        ))}
-      </div>
+          <div className="space-y-3">
+            {[
+              ["Demande reçue", formatShortDate(current.createdAt), true],
+              [
+                "Analyse du dossier",
+                "Après lecture par l'équipe Ifawa",
+                current.status !== "submitted",
+              ],
+              [
+                "Réponse transmise",
+                "Lorsque le traitement est terminé",
+                current.status === "completed",
+              ],
+            ].map(([step, date, done], index) => (
+              <Panel key={String(step)} tone={index === 0 ? "deep" : "paper"}>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cn(
+                      "grid size-8 place-items-center rounded-full",
+                      done ? "bg-clay text-ivory" : "bg-ivory-deep text-umber-soft",
+                    )}
+                  >
+                    {done ? <Check className="size-4" /> : "•"}
+                  </span>
+                  <div>
+                    <p className="font-semibold">{step}</p>
+                    <p className="label-mono text-umber-soft">{date}</p>
+                  </div>
+                </div>
+              </Panel>
+            ))}
+          </div>
+        </>
+      ) : (
+        <Empty
+          titre={loading ? "Chargement du suivi" : "Aucune demande en cours"}
+          texte={
+            loading
+              ? "Vos dossiers sont en cours de récupération."
+              : "Envoyez une demande depuis les services pour ouvrir un suivi."
+          }
+        />
+      )}
     </Shell>
   );
 }

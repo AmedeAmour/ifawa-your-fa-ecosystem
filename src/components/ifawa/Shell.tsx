@@ -1,5 +1,5 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Home,
   Library,
@@ -46,6 +46,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
   const { profil, notifications } = useApp();
   const [connected, setConnected] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const initialAuthResolved = useRef(false);
   const nonLues = authChecked ? notifications.filter((n) => n.nonLue).length : 0;
 
   useEffect(() => {
@@ -55,6 +56,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       if (!alive) return;
       setConnected(Boolean(user));
       actions.setCurrentUserId(user?.id);
+      initialAuthResolved.current = true;
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
       if (alive && user) {
@@ -71,6 +73,8 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       }
     });
     const unsubscribe = onAuthUserChange((user) => {
+      if (!initialAuthResolved.current && !user) return;
+      initialAuthResolved.current = true;
       setConnected(Boolean(user));
       actions.setCurrentUserId(user?.id);
       setAuthChecked(true);

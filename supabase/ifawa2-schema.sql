@@ -59,6 +59,19 @@ create table if not exists public.post_reactions (
   primary key (post_id, profile_id)
 );
 
+create table if not exists public.contributions (
+  id uuid primary key default gen_random_uuid(),
+  author_id uuid not null references public.profiles(id) on delete cascade,
+  fa_sign_id uuid references public.fa_signs(id) on delete set null,
+  title text not null,
+  body text not null,
+  category text not null default 'other',
+  status text not null default 'submitted' check (status in ('submitted', 'approved', 'rejected')),
+  reviewer_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.connections (
   id uuid primary key default gen_random_uuid(),
   requester_id uuid not null references public.profiles(id) on delete cascade,
@@ -105,6 +118,24 @@ create table if not exists public.service_catalog (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.service_requests (
+  id uuid primary key default gen_random_uuid(),
+  requester_id uuid not null references public.profiles(id) on delete cascade,
+  service_type text not null,
+  fa_sign_id uuid references public.fa_signs(id) on delete set null,
+  priority text,
+  subject text not null,
+  status text not null default 'submitted'
+    check (status in ('submitted', 'reviewing', 'processing', 'completed', 'cancelled')),
+  request_details jsonb not null default '{}'::jsonb,
+  result_summary text,
+  result_payload jsonb,
+  submitted_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create or replace function public.is_conversation_member(target_conversation_id uuid)
 returns boolean
 language sql
@@ -138,11 +169,13 @@ alter table public.profile_fa_details enable row level security;
 alter table public.posts enable row level security;
 alter table public.post_comments enable row level security;
 alter table public.post_reactions enable row level security;
+alter table public.contributions enable row level security;
 alter table public.connections enable row level security;
 alter table public.conversations enable row level security;
 alter table public.conversation_members enable row level security;
 alter table public.messages enable row level security;
 alter table public.service_catalog enable row level security;
+alter table public.service_requests enable row level security;
 
 drop policy if exists "profiles_select_authenticated" on public.profiles;
 create policy "profiles_select_authenticated"
@@ -249,6 +282,25 @@ on public.post_reactions for delete
 to authenticated
 using (profile_id = auth.uid());
 
+drop policy if exists "contributions_select_authenticated" on public.contributions;
+create policy "contributions_select_authenticated"
+on public.contributions for select
+to authenticated
+using (status = 'approved' or author_id = auth.uid());
+
+drop policy if exists "contributions_insert_own" on public.contributions;
+create policy "contributions_insert_own"
+on public.contributions for insert
+to authenticated
+with check (author_id = auth.uid());
+
+drop policy if exists "contributions_update_own_submitted" on public.contributions;
+create policy "contributions_update_own_submitted"
+on public.contributions for update
+to authenticated
+using (author_id = auth.uid() and status = 'submitted')
+with check (author_id = auth.uid() and status = 'submitted');
+
 drop policy if exists "connections_select_related" on public.connections;
 create policy "connections_select_related"
 on public.connections for select
@@ -318,6 +370,25 @@ create policy "service_catalog_select_authenticated"
 on public.service_catalog for select
 to authenticated
 using (is_active = true);
+
+drop policy if exists "service_requests_select_own" on public.service_requests;
+create policy "service_requests_select_own"
+on public.service_requests for select
+to authenticated
+using (requester_id = auth.uid());
+
+drop policy if exists "service_requests_insert_own" on public.service_requests;
+create policy "service_requests_insert_own"
+on public.service_requests for insert
+to authenticated
+with check (requester_id = auth.uid());
+
+drop policy if exists "service_requests_update_own" on public.service_requests;
+create policy "service_requests_update_own"
+on public.service_requests for update
+to authenticated
+using (requester_id = auth.uid())
+with check (requester_id = auth.uid());
 
 insert into storage.buckets (id, name, public)
 values ('profile-media', 'profile-media', true), ('post-media', 'post-media', true)
