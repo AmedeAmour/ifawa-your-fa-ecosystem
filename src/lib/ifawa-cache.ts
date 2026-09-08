@@ -1,4 +1,4 @@
-const cachePrefix = "ifawa.cache.v2";
+const cachePrefix = "ifawa.cache.v3";
 
 function cacheKey(userId: string | undefined, name: string) {
   return `${cachePrefix}.${userId || "anonymous"}.${name}`;

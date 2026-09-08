@@ -46,7 +46,7 @@ function Bibliotheque() {
             params={{ slug: s.slug }}
             className={cn(
               "group animate-rise p-4 transition-transform hover:-translate-y-0.5",
-              i % 5 === 1 ? "bg-forest text-ivory" : "bg-card carved",
+              i % 5 === 1 ? "rounded-2xl bg-forest text-ivory" : "bg-card carved",
             )}
             style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
           >

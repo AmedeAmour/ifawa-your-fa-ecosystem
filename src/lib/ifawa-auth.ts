@@ -252,16 +252,60 @@ export async function updateProfileSettings(
 ) {
   if (!supabase) return;
   const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return;
-  const { error } = await supabase
+  const user = userData.user;
+  if (!user) return;
+
+  const { data: existingProfile, error: existingError } = await supabase
     .from("profiles")
-    .update({
-      display_name: profile.pseudo.trim(),
-      avatar_url: profile.avatarUrl ?? null,
-      relation_enabled: profile.miseEnRelation,
-    })
-    .eq("id", userData.user.id);
+    .select("id, username, path, cover_url, is_profile_complete")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  const desiredAvatar = profile.avatarUrl || null;
+  const updates = {
+    display_name: profile.pseudo.trim(),
+    avatar_url: desiredAvatar,
+    relation_enabled: profile.miseEnRelation,
+  };
+
+  const { data: updated, error } = await supabase
+    .from("profiles")
+    .update(updates)
+    .eq("id", user.id)
+    .select("id, avatar_url")
+    .maybeSingle();
   if (error) throw error;
+
+  if (!updated) {
+    const username =
+      existingProfile?.username ?? normalizeUsername(profile.pseudo, user.email?.split("@")[0]);
+    const { data: upserted, error: upsertError } = await supabase
+      .from("profiles")
+      .upsert(
+        {
+          id: user.id,
+          username,
+          path: existingProfile?.path ?? "not_initiated",
+          cover_url: existingProfile?.cover_url ?? null,
+          is_profile_complete: existingProfile?.is_profile_complete ?? true,
+          ...updates,
+        },
+        { onConflict: "id" },
+      )
+      .select("id, avatar_url")
+      .maybeSingle();
+    if (upsertError) throw upsertError;
+    if (!upserted) throw new Error("Le profil n'a pas pu être enregistré.");
+    if (desiredAvatar && upserted.avatar_url !== desiredAvatar) {
+      throw new Error("La photo de profil n'a pas pu être confirmée.");
+    }
+    return;
+  }
+
+  if (desiredAvatar && updated.avatar_url !== desiredAvatar) {
+    throw new Error("La photo de profil n'a pas pu être confirmée.");
+  }
 }
 
 export const updateProfileMedia = updateProfileSettings;
@@ -283,10 +327,11 @@ export async function uploadProfileAvatar(file: File) {
     cacheControl: "3600",
     upsert: true,
   });
-  if (error) return readFileAsDataUrl(file);
+  if (error) throw new Error("La photo de profil n'a pas pu être envoyée.");
 
   const { data } = supabase.storage.from(avatarBucket).getPublicUrl(path);
-  return data.publicUrl || readFileAsDataUrl(file);
+  if (!data.publicUrl) throw new Error("La photo de profil n'a pas pu être préparée.");
+  return data.publicUrl;
 }
 
 function readFileAsDataUrl(file: File) {

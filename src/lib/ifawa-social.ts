@@ -104,6 +104,15 @@ function isInternalTestProfile(profile?: Pick<ProfileRow, "username" | "display_
     "msg fast",
     "msgfa",
     "msgfb",
+    "appflow",
+    "app flow",
+    "finala",
+    "finalb",
+    "finaltwo",
+    "feeda",
+    "feedb",
+    "avatar test",
+    "avatartest",
   ].some((marker) => text.includes(marker));
 }
 
@@ -118,6 +127,43 @@ function relativeTime(value?: string | null) {
   if (hours < 24) return `il y a ${hours} h`;
   const days = Math.floor(hours / 24);
   return `il y a ${days} j`;
+}
+
+function conversationReadKey(userId: string) {
+  return `ifawa.conversation-reads.${userId}`;
+}
+
+function readLocalConversationReads(userId: string) {
+  if (typeof window === "undefined") return new Map<string, number>();
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(conversationReadKey(userId)) ?? "{}") as
+      | Record<string, string>
+      | null;
+    return new Map(
+      Object.entries(parsed ?? {}).map(([conversationId, value]) => [
+        conversationId,
+        new Date(value).getTime() || 0,
+      ]),
+    );
+  } catch {
+    window.localStorage.removeItem(conversationReadKey(userId));
+    return new Map<string, number>();
+  }
+}
+
+function rememberLocalConversationRead(userId: string, conversationId: string) {
+  if (typeof window === "undefined" || !conversationId || conversationId.startsWith("peer:")) {
+    return;
+  }
+  const key = conversationReadKey(userId);
+  let parsed: Record<string, string> = {};
+  try {
+    parsed = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, string>;
+  } catch {
+    parsed = {};
+  }
+  parsed[conversationId] = new Date().toISOString();
+  window.localStorage.setItem(key, JSON.stringify(parsed));
 }
 
 function parsePayload(body: string | null): PostPayload {
@@ -596,6 +642,16 @@ export async function loadConversationsFromSupabase() {
       last_read_at: string | null;
     }>
   ).map((member) => member.conversation_id);
+  const myReadDates = new Map(
+    ((memberships ?? []) as Array<{
+      conversation_id: string;
+      last_read_at: string | null;
+    }>).map((member) => [
+      member.conversation_id,
+      member.last_read_at ? new Date(member.last_read_at).getTime() : 0,
+    ]),
+  );
+  const localReadDates = readLocalConversationReads(userId);
   if (myConversationIds.length === 0) return [];
 
   const [{ data: messages, error: messagesError }, { data: allMembers, error: membersError }] =
@@ -636,13 +692,21 @@ export async function loadConversationsFromSupabase() {
       (message) => message.conversation_id === conversationId,
     );
     const last = conversationMessages[conversationMessages.length - 1];
+    const lastReadAt = Math.max(
+      myReadDates.get(conversationId) ?? 0,
+      localReadDates.get(conversationId) ?? 0,
+    );
+    const unreadCount = conversationMessages.filter((message) => {
+      const sentAt = new Date(message.created_at).getTime();
+      return message.sender_id !== userId && (!lastReadAt || sentAt > lastReadAt);
+    }).length;
     return {
       id: conversationId,
       pseudo: displayName(other),
       avatarUrl: other?.avatar_url ?? undefined,
       extrait: last?.body ?? "Conversation ouverte",
       heure: relativeTime(last?.created_at),
-      nonLus: 0,
+      nonLus: unreadCount,
       messages: conversationMessages.map((message) => ({
         id: message.id,
         de: message.sender_id === userId ? "moi" : "eux",
@@ -657,6 +721,19 @@ export async function loadConversationsFromSupabase() {
 
 export function readCachedConversations(userId?: string): ConversationItem[] | null {
   return readCache<ConversationItem[] | null>(userId, "conversations", null);
+}
+
+export async function markConversationRead(conversationId: string) {
+  if (!supabase || !conversationId || conversationId.startsWith("peer:")) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  rememberLocalConversationRead(userId, conversationId);
+  const { error } = await supabase
+    .from("conversation_members")
+    .update({ last_read_at: new Date().toISOString() })
+    .eq("conversation_id", conversationId)
+    .eq("profile_id", userId);
+  if (error) return;
 }
 
 export async function sendRemoteMessage(conversationId: string, text: string) {
@@ -676,8 +753,11 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
   const userId = await currentUserId();
   if (!userId) return null;
 
-  const [{ data: connections, error: connectionsError }, { data: ownPosts, error: ownPostsError }] =
-    await Promise.all([
+  const [
+    { data: connections, error: connectionsError },
+    { data: ownPosts, error: ownPostsError },
+    { data: memberships, error: membershipsError },
+  ] = await Promise.all([
       supabase
         .from("connections")
         .select("id, requester_id, addressee_id, status, created_at, updated_at")
@@ -685,9 +765,14 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
         .order("updated_at", { ascending: false })
         .limit(30),
       supabase.from("posts").select("id, author_id").eq("author_id", userId).limit(80),
+      supabase
+        .from("conversation_members")
+        .select("conversation_id, profile_id, last_read_at")
+        .eq("profile_id", userId),
     ]);
   if (connectionsError) throw connectionsError;
   if (ownPostsError) throw ownPostsError;
+  if (membershipsError) throw membershipsError;
 
   const connectionRows = (connections ?? []) as Array<{
     id: string;
@@ -698,8 +783,19 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
     updated_at: string | null;
   }>;
   const ownPostIds = ((ownPosts ?? []) as Array<{ id: string }>).map((post) => post.id);
+  const membershipRows = (memberships ?? []) as Array<{
+    conversation_id: string;
+    profile_id: string;
+    last_read_at: string | null;
+  }>;
+  const conversationIds = membershipRows.map((membership) => membership.conversation_id);
 
-  const [{ data: comments, error: commentsError }, profiles] = await Promise.all([
+  const [
+    { data: comments, error: commentsError },
+    { data: messageRowsRaw, error: messagesError },
+    { data: conversationMembers, error: conversationMembersError },
+    profiles,
+  ] = await Promise.all([
     ownPostIds.length
       ? supabase
           .from("post_comments")
@@ -709,11 +805,28 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
           .order("created_at", { ascending: false })
           .limit(30)
       : Promise.resolve({ data: [], error: null }),
+    conversationIds.length
+      ? supabase
+          .from("messages")
+          .select("id, conversation_id, sender_id, body, created_at")
+          .in("conversation_id", conversationIds)
+          .neq("sender_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(80)
+      : Promise.resolve({ data: [], error: null }),
+    conversationIds.length
+      ? supabase
+          .from("conversation_members")
+          .select("conversation_id, profile_id")
+          .in("conversation_id", conversationIds)
+      : Promise.resolve({ data: [], error: null }),
     profileMap([
       ...connectionRows.flatMap((connection) => [connection.requester_id, connection.addressee_id]),
     ]),
   ]);
   if (commentsError) throw commentsError;
+  if (messagesError) throw messagesError;
+  if (conversationMembersError) throw conversationMembersError;
 
   const commentRows = (comments ?? []) as Array<{
     id: string;
@@ -722,6 +835,21 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
     created_at: string;
   }>;
   const commentProfiles = await profileMap(commentRows.map((comment) => comment.author_id));
+  const messageRows = (messageRowsRaw ?? []) as Array<{
+    id: string;
+    conversation_id: string;
+    sender_id: string;
+    body: string | null;
+    created_at: string;
+  }>;
+  const conversationMemberRows = (conversationMembers ?? []) as Array<{
+    conversation_id: string;
+    profile_id: string;
+  }>;
+  const messageProfiles = await profileMap([
+    ...messageRows.map((message) => message.sender_id),
+    ...conversationMemberRows.map((member) => member.profile_id),
+  ]);
 
   const connectionNotifications: Notification[] = connectionRows
     .filter((connection) => {
@@ -757,7 +885,49 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
       nonLue: true,
     }));
 
-  const payload = [...connectionNotifications, ...commentNotifications].slice(0, 50);
+  const lastReadByConversation = new Map(
+    membershipRows.map((membership) => [
+      membership.conversation_id,
+      membership.last_read_at ? new Date(membership.last_read_at).getTime() : 0,
+    ]),
+  );
+  const localReadDates = readLocalConversationReads(userId);
+  const latestUnreadMessages = new Map<string, (typeof messageRows)[number]>();
+  messageRows.forEach((message) => {
+    const lastReadAt = Math.max(
+      lastReadByConversation.get(message.conversation_id) ?? 0,
+      localReadDates.get(message.conversation_id) ?? 0,
+    );
+    const sentAt = new Date(message.created_at).getTime();
+    if (lastReadAt && sentAt <= lastReadAt) return;
+    if (!latestUnreadMessages.has(message.conversation_id)) {
+      latestUnreadMessages.set(message.conversation_id, message);
+    }
+  });
+  const messageNotifications: Notification[] = [...latestUnreadMessages.values()]
+    .filter((message) => !isInternalTestProfile(messageProfiles.get(message.sender_id)))
+    .map((message) => ({
+      id: `message-${message.conversation_id}-${message.id}`,
+      texte: `${displayName(messageProfiles.get(message.sender_id))} vous a envoyé un message.`,
+      heure: relativeTime(message.created_at),
+      type: "message",
+      conversationId: message.conversation_id,
+      nonLue: true,
+    }));
+
+  const payload = [...connectionNotifications, ...commentNotifications, ...messageNotifications]
+    .sort((a, b) => {
+      const parse = (value: string) => {
+        if (value.includes("min")) return Number.parseInt(value, 10) || 0;
+        if (value.includes(" h")) return (Number.parseInt(value.replace(/\D/g, ""), 10) || 0) * 60;
+        if (value.includes(" j")) {
+          return (Number.parseInt(value.replace(/\D/g, ""), 10) || 0) * 1440;
+        }
+        return 0;
+      };
+      return parse(a.heure) - parse(b.heure);
+    })
+    .slice(0, 50);
   writeCache(userId, "notifications", payload);
   return payload;
 }

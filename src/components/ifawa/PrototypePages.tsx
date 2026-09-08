@@ -53,6 +53,7 @@ import {
   loadMemberProfile,
   loadNetworkFromSupabase,
   loadNotificationsFromSupabase,
+  markConversationRead,
   readCachedConversations,
   readCachedNetwork,
   readCachedNotifications,
@@ -177,7 +178,7 @@ export function ReseauPage() {
       <PageTitle kicker="Réseau">Membres et connexions</PageTitle>
 
       <Panel tone="deep" className="mb-5">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-full bg-card/80 px-3 py-2">
           <Search className="size-4 text-umber-soft" />
           <input
             className="w-full bg-transparent text-[15px] outline-none"
@@ -273,7 +274,7 @@ export function ReseauPage() {
             accepted.map((member) => (
               <div
                 key={member.id}
-                className="flex items-center gap-3 bg-ivory/10 p-3 transition-colors hover:bg-ivory/15"
+                className="flex items-center gap-3 rounded-2xl bg-ivory/10 p-2.5 transition-colors hover:bg-ivory/15"
               >
                 <button
                   type="button"
@@ -310,7 +311,7 @@ export function ReseauPage() {
                         setNetworkStatus("Impossible de retirer cette connexion pour le moment.");
                       }
                     }}
-                    className="grid size-9 shrink-0 place-items-center text-ivory/65 transition-colors hover:text-brass"
+                    className="grid size-9 shrink-0 place-items-center rounded-full text-ivory/65 transition-colors hover:bg-ivory/10 hover:text-brass"
                     aria-label="Retirer cette connexion"
                   >
                     <UserMinus className="size-4" />
@@ -403,10 +404,49 @@ export function MessagesPage() {
     };
   }, [messageSearch.conversation, messageSearch.peer]);
 
+  useEffect(() => {
+    if (!active || active.startsWith("peer:")) return;
+    setLocalMessages((items) => {
+      const next = items.map((item) => (item.id === active ? { ...item, nonLus: 0 } : item));
+      window.dispatchEvent(
+        new CustomEvent("ifawa:badge-hint", {
+          detail: { messages: next.reduce((sum, item) => sum + item.nonLus, 0) },
+        }),
+      );
+      return next;
+    });
+    actions.lireNotificationsConversation(active);
+    markConversationRead(active)
+      .then(() => Promise.all([loadConversationsFromSupabase(), loadNotificationsFromSupabase()]))
+      .then(([conversations, notifications]) => {
+        if (conversations) {
+          const nextConversations = conversations.map((item) =>
+            item.id === active ? { ...item, nonLus: 0 } : item,
+          );
+          setLocalMessages(nextConversations);
+          window.dispatchEvent(
+            new CustomEvent("ifawa:badge-hint", {
+              detail: { messages: nextConversations.reduce((sum, item) => sum + item.nonLus, 0) },
+            }),
+          );
+        }
+        if (notifications) actions.remplacerNotifications(notifications);
+      })
+      .catch(() => {});
+  }, [active]);
+
+  useEffect(() => {
+    if (active || localMessages.length === 0) return;
+    const unreadConversation = localMessages.find((item) => item.nonLus > 0);
+    if (unreadConversation) {
+      setActive(unreadConversation.id);
+    }
+  }, [active, localMessages]);
+
   return (
     <Shell>
       <PageTitle kicker="Messages">Conversations</PageTitle>
-      <div className="grid min-h-[620px] gap-4 lg:grid-cols-[300px_1fr]">
+      <div className="grid min-h-[calc(100vh-10rem)] gap-4 lg:grid-cols-[300px_1fr]">
         <Panel className={cn("space-y-2", active && "hidden lg:block")}>
           {loading ? (
             <Empty titre="Chargement" texte="Ouverture de vos conversations." />
@@ -420,7 +460,7 @@ export function MessagesPage() {
                   setActive(item.id);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-3 p-3 text-left transition-colors",
+                  "flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-colors",
                   active === item.id ? "bg-umber text-ivory" : "hover:bg-ivory-deep",
                 )}
               >
@@ -449,7 +489,7 @@ export function MessagesPage() {
         </Panel>
 
         {currentConversation ? (
-          <Panel tone="deep" className="flex flex-col">
+          <Panel tone="deep" className="flex max-h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] flex-col">
             <div className="mb-4 flex items-center gap-3 border-b border-umber/10 pb-4">
               <button
                 type="button"
@@ -470,14 +510,14 @@ export function MessagesPage() {
               </div>
             </div>
             {messageStatus && <p className="mb-3 text-[13px] text-clay">{messageStatus}</p>}
-            <div className="flex-1 space-y-3">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               {currentConversation.messages.length ? (
                 currentConversation.messages.map((message, index) => (
                   <div
                     key={`${message.heure}-${index}`}
                     className={cn(
-                      "max-w-[78%] p-3 text-[13px] leading-relaxed",
-                      message.de === "moi" ? "ml-auto bg-forest text-ivory" : "bg-card carved",
+                      "max-w-[78%] rounded-2xl p-3 text-[13px] leading-relaxed",
+                      message.de === "moi" ? "ml-auto bg-forest text-ivory" : "bg-card",
                     )}
                   >
                     {message.texte}
@@ -567,15 +607,15 @@ export function MessagesPage() {
                   });
                 setDraft("");
               }}
-              className="mt-5 flex gap-2"
+              className="mt-4 flex shrink-0 gap-2 border-t border-umber/10 bg-ivory-deep pt-3"
             >
               <input
-                className={inputCls}
+                className={cn(inputCls, "rounded-full")}
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Écrire un message…"
               />
-              <Btn type="submit">
+              <Btn type="submit" className="shrink-0 rounded-full">
                 <Send className="size-3.5" /> Envoyer
               </Btn>
             </form>
@@ -709,7 +749,7 @@ export function ServicesPage() {
             params={{ slug: service.slug }}
             className={cn(
               "animate-rise p-5 transition-transform hover:-translate-y-0.5",
-              index === 0 ? "bg-forest text-ivory" : "bg-card carved",
+              index === 0 ? "rounded-2xl bg-forest text-ivory" : "bg-card carved",
             )}
             style={{ animationDelay: `${index * 50}ms` }}
           >
@@ -1235,6 +1275,7 @@ export function NotificationsPage() {
     contribution: "/contribuer",
     service: "/suivi",
     signe: "/fa",
+    message: "/messages",
   } as const;
 
   return (
@@ -1265,6 +1306,11 @@ export function NotificationsPage() {
             key={notification.id}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             to={destination[notification.type] as any}
+            search={
+              notification.type === "message" && notification.conversationId
+                ? ({ conversation: notification.conversationId } as never)
+                : undefined
+            }
             onClick={() => actions.lireNotification(notification.id)}
             className="block"
           >
@@ -1318,16 +1364,16 @@ export function ParametresPage() {
   async function chooseProfileImage(file: File | undefined) {
     if (!file) return;
     setStatus("Enregistrement de la photo...");
-    const nextAvatar = await uploadProfileAvatar(file);
-    setAvatarUrl(nextAvatar);
-    actions.majProfil({ avatarUrl: nextAvatar });
     try {
+      const nextAvatar = await uploadProfileAvatar(file);
+      setAvatarUrl(nextAvatar);
+      actions.majProfil({ avatarUrl: nextAvatar });
       await updateProfileSettings({ pseudo, miseEnRelation: relation, avatarUrl: nextAvatar });
       const savedProfile = await loadCurrentProfile();
       if (savedProfile) actions.majProfil(savedProfile);
       setStatus("Photo de profil enregistrée.");
     } catch {
-      setStatus("Photo ajoutée sur cet appareil. Réessayez l'enregistrement si nécessaire.");
+      setStatus("La photo n'a pas pu être enregistrée. Réessayez dans quelques instants.");
     }
   }
 
@@ -1378,7 +1424,7 @@ export function ParametresPage() {
             </div>
           </Field>
           <Field label="Photo de couverture">
-            <div className="aspect-[5/2] w-full bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
+            <div className="aspect-[5/2] w-full rounded-2xl bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
             <p className="mt-2 text-[12px] text-umber-soft">
               La couverture Ifawa est commune à tous les profils.
             </p>
@@ -1386,7 +1432,7 @@ export function ParametresPage() {
         </div>
         <button
           onClick={() => setRelation((value) => !value)}
-          className="mt-5 flex w-full items-center justify-between bg-ivory-deep p-4 text-left"
+          className="mt-5 flex w-full items-center justify-between rounded-2xl bg-ivory-deep p-4 text-left"
         >
           <span>
             <strong>Mise en relation</strong>
@@ -1591,7 +1637,7 @@ function MemberRow({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center",
+        "flex flex-col gap-3 rounded-2xl bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center",
         active && "outline outline-1 outline-clay/30",
       )}
     >
@@ -1619,7 +1665,7 @@ function RemoteMemberRow({
   onSelect?: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-3 bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center">
+    <div className="flex flex-col gap-3 rounded-2xl bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center">
       <button
         type="button"
         onClick={onSelect}
@@ -1650,7 +1696,7 @@ function ProfilePreview({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-umber/35 p-4 pt-16 backdrop-blur-sm sm:items-center sm:p-6">
       <div className="w-full max-w-lg animate-rise bg-card text-umber shadow-2xl carved">
-        <div className="h-32 bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
+        <div className="h-32 rounded-t-[inherit] bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
         <div className="-mt-10 px-5 pb-5">
           <div className="relative z-10 inline-flex rounded-full border-4 border-card bg-card">
             <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={76} tone="clay" />
@@ -1714,7 +1760,7 @@ function AdminList({ title, rows }: { title: string; rows: string[] }) {
       <Kicker>{title}</Kicker>
       <div className="mt-3 space-y-2">
         {rows.map((row) => (
-          <p key={row} className="bg-ivory-deep/50 p-3 text-[13px]">
+          <p key={row} className="rounded-2xl bg-ivory-deep/50 p-3 text-[13px]">
             {row}
           </p>
         ))}

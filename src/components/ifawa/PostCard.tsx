@@ -43,6 +43,7 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
   const [shareNote, setShareNote] = useState("");
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(post.contenu);
+  const [imageOpen, setImageOpen] = useState(false);
   const officiel = post.type === "Officiel";
   const reaction = reactions[post.id];
   const activeReaction = reactionOptions.find((option) => option.key === reaction);
@@ -155,7 +156,7 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
             value={editText}
             onChange={(event) => setEditText(event.target.value)}
             rows={3}
-            className="w-full resize-none border border-umber/15 bg-ivory px-3 py-2 text-[13px] outline-none focus:border-clay"
+            className="w-full resize-none rounded-2xl border border-umber/15 bg-ivory px-3 py-2 text-[13px] outline-none focus:border-clay"
           />
           <div className="flex justify-end gap-2">
             <button
@@ -167,7 +168,7 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
             </button>
             <button
               type="submit"
-              className="bg-clay px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ivory"
+              className="rounded-full bg-clay px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ivory"
             >
               Enregistrer
             </button>
@@ -185,14 +186,16 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
       )}
 
       {post.image && (
-        <img
-          src={post.mediaUrl ?? tray}
-          alt=""
-          loading="lazy"
-          width={1280}
-          height={800}
-          className="mt-3 aspect-[16/10] w-full object-cover"
-        />
+        <button type="button" onClick={() => setImageOpen(true)} className="mt-3 block w-full">
+          <img
+            src={post.mediaUrl ?? tray}
+            alt=""
+            loading="lazy"
+            width={1280}
+            height={800}
+            className="aspect-[16/10] w-full rounded-2xl object-cover"
+          />
+        </button>
       )}
 
       <div
@@ -225,7 +228,7 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
                       .catch(refreshFeed);
                     setReactionOpen(false);
                   }}
-                  className="flex items-center justify-center gap-2 px-2.5 py-2 text-[12px] transition-colors hover:bg-ivory-deep sm:justify-start"
+                  className="flex items-center justify-center gap-2 rounded-xl px-2.5 py-2 text-[12px] transition-colors hover:bg-ivory-deep sm:justify-start"
                 >
                   <ReactionBadge reaction={option} size="md" />
                   {option.label}
@@ -268,7 +271,7 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
             rows={2}
             placeholder="Ajouter un mot avant de partager…"
             className={cn(
-              "w-full resize-none border px-3 py-2 text-[13px] outline-none",
+              "w-full resize-none rounded-2xl border px-3 py-2 text-[13px] outline-none",
               officiel
                 ? "border-ivory/20 bg-transparent placeholder:text-ivory/40"
                 : "border-umber/15 bg-ivory placeholder:text-umber-soft/50 focus:border-clay",
@@ -277,7 +280,7 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
           <div className="flex justify-end">
             <button
               type="submit"
-              className="bg-clay px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ivory"
+              className="rounded-full bg-clay px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ivory"
             >
               Partager
             </button>
@@ -296,7 +299,10 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
             <div key={c.id} className="flex gap-2.5">
               <Monogram name={c.auteur} imageUrl={c.authorAvatarUrl} size={28} />
               <div
-                className={cn("flex-1 px-3 py-2", officiel ? "bg-ivory/10" : "bg-ivory-deep/60")}
+                className={cn(
+                  "flex-1 rounded-2xl px-3 py-2",
+                  officiel ? "bg-ivory/10" : "bg-ivory-deep/60",
+                )}
               >
                 <div className="flex items-start gap-2">
                   <p className="flex-1 text-[12px] font-semibold">
@@ -336,7 +342,7 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
               onChange={(e) => setTexte(e.target.value)}
               placeholder="Écrire un commentaire…"
               className={cn(
-                "flex-1 border px-3 py-2 text-[13px] outline-none",
+                "flex-1 rounded-full border px-3 py-2 text-[13px] outline-none",
                 officiel
                   ? "border-ivory/20 bg-transparent placeholder:text-ivory/40"
                   : "border-umber/15 bg-ivory placeholder:text-umber-soft/50 focus:border-clay",
@@ -344,12 +350,27 @@ export function PostCard({ post, index = 0 }: { post: Post; index?: number }) {
             />
             <button
               type="submit"
-              className="bg-clay px-3 font-mono text-[10px] uppercase tracking-[0.16em] text-ivory"
+              className="rounded-full bg-clay px-3 font-mono text-[10px] uppercase tracking-[0.16em] text-ivory"
             >
               Envoyer
             </button>
           </form>
         </div>
+      )}
+
+      {imageOpen && (
+        <button
+          type="button"
+          onClick={() => setImageOpen(false)}
+          className="fixed inset-0 z-50 grid place-items-center bg-umber/85 p-4"
+          aria-label="Fermer l'image"
+        >
+          <img
+            src={post.mediaUrl ?? tray}
+            alt=""
+            className="max-h-[88vh] max-w-[94vw] rounded-2xl object-contain shadow-2xl"
+          />
+        </button>
       )}
     </article>
   );

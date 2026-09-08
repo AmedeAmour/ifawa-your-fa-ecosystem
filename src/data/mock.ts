@@ -330,7 +330,8 @@ export type Notification = {
   id: string;
   texte: string;
   heure: string;
-  type: "connexion" | "commentaire" | "contribution" | "service" | "signe";
+  type: "connexion" | "commentaire" | "contribution" | "service" | "signe" | "message";
+  conversationId?: string;
   nonLue: boolean;
 };
 

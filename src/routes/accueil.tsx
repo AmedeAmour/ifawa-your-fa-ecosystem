@@ -86,7 +86,7 @@ function Accueil() {
           <button
             type="button"
             onClick={() => setComposerOpen(true)}
-            className="min-h-11 flex-1 bg-ivory-deep/70 px-4 text-left text-[14px] text-umber-soft transition-colors hover:bg-ivory-deep"
+            className="min-h-11 flex-1 rounded-full bg-ivory-deep/70 px-4 text-left text-[14px] text-umber-soft transition-colors hover:bg-ivory-deep"
           >
             Que souhaitez-vous partager ?
           </button>
@@ -102,7 +102,7 @@ function Accueil() {
                 setComposerOpen(true);
               }}
               className={cn(
-                "min-w-0 whitespace-nowrap px-2 py-2 text-center font-mono text-[8.5px] uppercase tracking-[0.08em] transition-colors sm:text-[9px] sm:tracking-[0.14em]",
+                "min-w-0 whitespace-nowrap rounded-full px-2 py-2 text-center font-mono text-[8.5px] uppercase tracking-[0.08em] transition-colors sm:text-[9px] sm:tracking-[0.14em]",
                 type === item ? "bg-umber text-ivory" : "bg-ivory-deep text-umber-soft",
               )}
             >
@@ -125,7 +125,7 @@ function Accueil() {
               }
               rows={4}
               autoFocus
-              className="w-full resize-none border border-umber/15 bg-ivory px-3 py-3 text-[15px] outline-none placeholder:text-umber-soft/70 focus:border-clay"
+              className="w-full resize-none rounded-2xl border border-umber/15 bg-ivory px-3 py-3 text-[15px] outline-none placeholder:text-umber-soft/70 focus:border-clay"
             />
             <div className="mt-3 flex items-center gap-2">
               <input
@@ -145,7 +145,7 @@ function Accueil() {
               <button
                 onClick={() => fileRef.current?.click()}
                 className={cn(
-                  "inline-flex items-center gap-2 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+                  "inline-flex items-center gap-2 rounded-full px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
                   imageUrl ? "bg-forest text-ivory" : "bg-card carved text-umber-soft",
                 )}
               >
@@ -201,7 +201,11 @@ function Accueil() {
               </Btn>
             </div>
             {imageUrl && (
-              <img src={imageUrl} alt="" className="mt-3 aspect-[16/10] w-full object-cover" />
+              <img
+                src={imageUrl}
+                alt=""
+                className="mt-3 aspect-[16/10] w-full rounded-2xl object-cover"
+              />
             )}
           </div>
         )}
@@ -213,7 +217,7 @@ function Accueil() {
             key={f}
             onClick={() => setFiltre(f)}
             className={cn(
-              "px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+              "rounded-full px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
               filtre === f
                 ? "bg-umber text-ivory"
                 : "bg-ivory-deep text-umber-soft hover:bg-ivory-deep/70",
@@ -257,7 +261,7 @@ function DecouverteBloc() {
       </div>
       <Link
         to="/services/initiation"
-        className="mt-3 flex items-center justify-between bg-clay px-5 py-4 text-ivory transition-colors hover:bg-clay/90"
+        className="mt-3 flex items-center justify-between rounded-2xl bg-clay px-5 py-4 text-ivory transition-colors hover:bg-clay/90"
       >
         <span className="font-display text-[20px] uppercase leading-none">
           Demander une initiation

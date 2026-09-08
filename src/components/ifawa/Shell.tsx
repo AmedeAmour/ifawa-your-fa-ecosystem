@@ -27,6 +27,9 @@ import {
   loadFeedFromSupabase,
   loadNetworkFromSupabase,
   loadNotificationsFromSupabase,
+  readCachedConversations,
+  readCachedNetwork,
+  readCachedNotifications,
 } from "@/lib/ifawa-social";
 
 const mainNav = [
@@ -49,9 +52,11 @@ const sideExtra = [
 export function Shell({ children, right }: { children: ReactNode; right?: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
-  const { profil, notifications } = useApp();
+  const { currentUserId, profil, notifications } = useApp();
   const [connected, setConnected] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
+  const [networkBadge, setNetworkBadge] = useState(0);
+  const [messageBadge, setMessageBadge] = useState(0);
   const initialAuthResolved = useRef(false);
   const nonLues = authChecked ? notifications.filter((n) => n.nonLue).length : 0;
 
@@ -60,7 +65,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
     let alive = true;
 
     async function warmAuthenticatedData() {
-      const [profile, notifications] = await Promise.all([
+      const [profile, notifications, _feed, network, conversations] = await Promise.all([
         loadCurrentProfile().catch(() => null),
         loadNotificationsFromSupabase().catch(() => null),
         loadFeedFromSupabase().catch(() => null),
@@ -73,6 +78,21 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       if (!alive) return;
       if (profile) actions.majProfil(profile);
       if (notifications) actions.remplacerNotifications(notifications);
+      if (network) setNetworkBadge(network.received.length);
+      if (conversations) {
+        setMessageBadge(conversations.reduce((sum, item) => sum + item.nonLus, 0));
+      }
+    }
+
+    function hydrateCachedBadges(userId?: string) {
+      const cachedNotifications = readCachedNotifications(userId);
+      const cachedNetwork = readCachedNetwork(userId);
+      const cachedConversations = readCachedConversations(userId);
+      if (cachedNotifications) actions.remplacerNotifications(cachedNotifications);
+      if (cachedNetwork) setNetworkBadge(cachedNetwork.received.length);
+      if (cachedConversations) {
+        setMessageBadge(cachedConversations.reduce((sum, item) => sum + item.nonLus, 0));
+      }
     }
 
     getCurrentUser().then((user) => {
@@ -82,7 +102,10 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       initialAuthResolved.current = true;
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
-      if (alive && user) void warmAuthenticatedData();
+      if (alive && user) {
+        hydrateCachedBadges(user.id);
+        void warmAuthenticatedData();
+      }
     });
     const unsubscribe = onAuthUserChange((user) => {
       if (!initialAuthResolved.current && !user) return;
@@ -91,13 +114,60 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       actions.setCurrentUserId(user?.id);
       setAuthChecked(true);
       if (!user) navigate({ to: "/connexion" });
-      if (user) void warmAuthenticatedData();
+      if (user) {
+        hydrateCachedBadges(user.id);
+        void warmAuthenticatedData();
+      } else {
+        setNetworkBadge(0);
+        setMessageBadge(0);
+      }
     });
     return () => {
       alive = false;
       unsubscribe();
     };
   }, [navigate]);
+
+  useEffect(() => {
+    if (!authChecked || !connected) return;
+    let alive = true;
+
+    async function refreshBadges() {
+      const cachedNetwork = readCachedNetwork(currentUserId);
+      const cachedConversations = readCachedConversations(currentUserId);
+      if (cachedNetwork) setNetworkBadge(cachedNetwork.received.length);
+      if (cachedConversations) {
+        setMessageBadge(cachedConversations.reduce((sum, item) => sum + item.nonLus, 0));
+      }
+
+      const [nextNotifications, nextNetwork, nextConversations] = await Promise.all([
+        loadNotificationsFromSupabase().catch(() => null),
+        loadNetworkFromSupabase().catch(() => null),
+        loadConversationsFromSupabase().catch(() => null),
+      ]);
+      if (!alive) return;
+      if (nextNotifications) actions.remplacerNotifications(nextNotifications);
+      if (nextNetwork) setNetworkBadge(nextNetwork.received.length);
+      if (nextConversations) {
+        setMessageBadge(nextConversations.reduce((sum, item) => sum + item.nonLus, 0));
+      }
+    }
+
+    function applyBadgeHint(event: Event) {
+      const detail = (event as CustomEvent<{ messages?: number; network?: number }>).detail;
+      if (typeof detail?.messages === "number") setMessageBadge(detail.messages);
+      if (typeof detail?.network === "number") setNetworkBadge(detail.network);
+    }
+
+    void refreshBadges();
+    window.addEventListener("ifawa:refresh-badges", refreshBadges);
+    window.addEventListener("ifawa:badge-hint", applyBadgeHint);
+    return () => {
+      alive = false;
+      window.removeEventListener("ifawa:refresh-badges", refreshBadges);
+      window.removeEventListener("ifawa:badge-hint", applyBadgeHint);
+    };
+  }, [authChecked, connected, currentUserId, pathname]);
 
   async function disconnect() {
     await signOut();
@@ -211,7 +281,15 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
         </div>
       )}
 
-      {authChecked && connected && <BottomNav pathname={pathname} />}
+      {authChecked && connected && (
+        <BottomNav
+          pathname={pathname}
+          badges={{
+            "/reseau": networkBadge,
+            "/messages": messageBadge,
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -309,7 +387,7 @@ function DefaultRail() {
   );
 }
 
-function BottomNav({ pathname }: { pathname: string }) {
+function BottomNav({ pathname, badges = {} }: { pathname: string; badges?: Record<string, number> }) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-umber/10 bg-ivory/98 backdrop-blur lg:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5">
@@ -326,7 +404,14 @@ function BottomNav({ pathname }: { pathname: string }) {
                 active ? "text-clay" : "text-umber-soft",
               )}
             >
-              <Icon className="size-5" />
+              <span className="relative">
+                <Icon className="size-5" />
+                {(badges[n.to] ?? 0) > 0 && (
+                  <span className="absolute -right-2.5 -top-2 grid min-h-4 min-w-4 place-items-center rounded-full bg-clay px-1 font-mono text-[8px] leading-none text-ivory">
+                    {badges[n.to] > 9 ? "9+" : badges[n.to]}
+                  </span>
+                )}
+              </span>
               <span className="font-mono text-[9px] uppercase tracking-[0.1em]">{n.label}</span>
             </Link>
           );

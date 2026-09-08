@@ -23,6 +23,7 @@ export type AppState = {
   posts: Post[];
   reactions: Record<string, ReactionKind>;
   notifications: Notification[];
+  readNotificationIds: string[];
   connexions: string[];
   demandes: { id: string; etat: "attente" | "acceptee" | "refusee" }[];
   demandesEnvoyees: string[];
@@ -44,6 +45,7 @@ const initial: AppState = {
   posts: [],
   reactions: {},
   notifications: [],
+  readNotificationIds: [],
   connexions: [],
   demandes: [],
   demandesEnvoyees: [],
@@ -63,6 +65,7 @@ function readInitialState() {
       posts: initial.posts,
       reactions: initial.reactions,
       notifications: initial.notifications,
+      readNotificationIds: persisted.readNotificationIds ?? initial.readNotificationIds,
     };
   } catch {
     window.localStorage.removeItem(storageKey);
@@ -116,16 +119,18 @@ export const actions = {
   },
   remplacerNotifications(notifications: Notification[]) {
     setState((s) => {
-      const readIds = new Set(
-        s.notifications
+      const readIds = new Set([
+        ...s.readNotificationIds,
+        ...s.notifications
           .filter((notification) => !notification.nonLue)
           .map((notification) => notification.id),
-      );
+      ]);
       return {
         notifications: notifications.map((notification) => ({
           ...notification,
           nonLue: notification.nonLue && !readIds.has(notification.id),
         })),
+        readNotificationIds: [...readIds],
       };
     });
   },
@@ -258,18 +263,51 @@ export const actions = {
     );
   },
   majProfil(patch: Partial<Profil>) {
-    setState((s) => ({ profil: { ...s.profil, ...patch }, onboarded: true }));
+    const cleanPatch = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    ) as Partial<Profil>;
+    setState((s) => ({ profil: { ...s.profil, ...cleanPatch }, onboarded: true }));
   },
   lireNotification(id: string) {
     setState((s) => ({
+      readNotificationIds: s.readNotificationIds.includes(id)
+        ? s.readNotificationIds
+        : [...s.readNotificationIds, id],
       notifications: s.notifications.map((notification) =>
         notification.id === id ? { ...notification, nonLue: false } : notification,
       ),
     }));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ifawa:refresh-badges"));
+    }
   },
   toutLireNotifications() {
     setState((s) => ({
+      readNotificationIds: [
+        ...new Set([...s.readNotificationIds, ...s.notifications.map((item) => item.id)]),
+      ],
       notifications: s.notifications.map((notification) => ({ ...notification, nonLue: false })),
     }));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("ifawa:refresh-badges"));
+    }
+  },
+  lireNotificationsConversation(conversationId: string) {
+    setState((s) => {
+      const ids = s.notifications
+        .filter(
+          (notification) =>
+            notification.type === "message" && notification.conversationId === conversationId,
+        )
+        .map((notification) => notification.id);
+      return {
+        readNotificationIds: [...new Set([...s.readNotificationIds, ...ids])],
+        notifications: s.notifications.map((notification) =>
+          notification.type === "message" && notification.conversationId === conversationId
+            ? { ...notification, nonLue: false }
+            : notification,
+        ),
+      };
+    });
   },
 };
