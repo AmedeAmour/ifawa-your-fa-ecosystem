@@ -2,6 +2,8 @@ import type { Notification, Post } from "@/data/mock";
 import { readCache, writeCache } from "./ifawa-cache";
 import type { ReactionKind } from "./store";
 import { supabase } from "./supabase";
+import { photoToWebP } from "./image-webp";
+import { loadReadReceipts, persistReceipt, readReceipts } from "./read-receipts";
 
 type ProfileRow = {
   id: string;
@@ -15,12 +17,14 @@ type ProfileRow = {
 
 type PostPayload = {
   text: string;
-  type?: Post["type"];
-  mediaUrl?: string;
-  sharedFrom?: {
-    author: string;
-    text: string;
-  };
+  type?: Post["type"] | undefined;
+  mediaUrl?: string | undefined;
+  sharedFrom?:
+    | {
+        author: string;
+        text: string;
+      }
+    | undefined;
 };
 
 type PostRow = {
@@ -50,17 +54,17 @@ const postMediaBucket = "post-media";
 export type NetworkMember = {
   id: string;
   pseudo: string;
-  avatarUrl?: string;
+  avatarUrl?: string | undefined;
   signe: string;
-  status?: string;
-  requestId?: string;
-  relationRole?: "requester" | "addressee";
+  status?: string | undefined;
+  requestId?: string | undefined;
+  relationRole?: "requester" | "addressee" | undefined;
 };
 
 export type ConversationItem = {
   id: string;
   pseudo: string;
-  avatarUrl?: string;
+  avatarUrl?: string | undefined;
   extrait: string;
   heure: string;
   nonLus: number;
@@ -84,36 +88,8 @@ function displayName(profile?: ProfileRow) {
   return profile.display_name?.trim() || `@${profile.username ?? "membre"}`;
 }
 
-function isInternalTestProfile(profile?: Pick<ProfileRow, "username" | "display_name"> | null) {
-  const text = `${profile?.username ?? ""} ${profile?.display_name ?? ""}`.toLowerCase();
-  return [
-    "codex",
-    "uitest",
-    "service test",
-    "service flow",
-    "servicetest",
-    "serviceflow",
-    "contribution test",
-    "contribution flow",
-    "contribtest",
-    "contribflow",
-    "utilisateur a",
-    "utilisateur b",
-    "fulla",
-    "fullb",
-    "msg fast",
-    "msgfa",
-    "msgfb",
-    "appflow",
-    "app flow",
-    "finala",
-    "finalb",
-    "finaltwo",
-    "feeda",
-    "feedb",
-    "avatar test",
-    "avatartest",
-  ].some((marker) => text.includes(marker));
+function isInternalTestProfile(_profile?: Pick<ProfileRow, "username" | "display_name"> | null) {
+  return false;
 }
 
 function relativeTime(value?: string | null) {
@@ -136,9 +112,9 @@ function conversationReadKey(userId: string) {
 function readLocalConversationReads(userId: string) {
   if (typeof window === "undefined") return new Map<string, number>();
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(conversationReadKey(userId)) ?? "{}") as
-      | Record<string, string>
-      | null;
+    const parsed = JSON.parse(
+      window.localStorage.getItem(conversationReadKey(userId)) ?? "{}",
+    ) as Record<string, string> | null;
     return new Map(
       Object.entries(parsed ?? {}).map(([conversationId, value]) => [
         conversationId,
@@ -149,21 +125,6 @@ function readLocalConversationReads(userId: string) {
     window.localStorage.removeItem(conversationReadKey(userId));
     return new Map<string, number>();
   }
-}
-
-function rememberLocalConversationRead(userId: string, conversationId: string) {
-  if (typeof window === "undefined" || !conversationId || conversationId.startsWith("peer:")) {
-    return;
-  }
-  const key = conversationReadKey(userId);
-  let parsed: Record<string, string> = {};
-  try {
-    parsed = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, string>;
-  } catch {
-    parsed = {};
-  }
-  parsed[conversationId] = new Date().toISOString();
-  window.localStorage.setItem(key, JSON.stringify(parsed));
 }
 
 function parsePayload(body: string | null): PostPayload {
@@ -205,36 +166,59 @@ async function profileMap(ids: string[]) {
   return new Map((data ?? []).map((profile) => [profile.id, profile as ProfileRow]));
 }
 
-export async function loadFeedFromSupabase() {
+export async function loadFeedFromSupabase(
+  options: { limit?: number; authorId?: string; query?: string } = {},
+) {
   if (!supabase) return null;
   const userId = await currentUserId();
   if (!userId) return null;
 
-  const [
-    { data: posts, error: postsError },
-    { data: comments, error: commentsError },
-    { data: reactions, error: reactionsError },
-  ] = await Promise.all([
-    supabase
-      .from("posts")
-      .select("id, author_id, body, created_at, updated_at")
-      .order("created_at", { ascending: false })
-      .limit(80),
-    supabase
-      .from("post_comments")
-      .select("id, post_id, author_id, body, created_at")
-      .order("created_at", { ascending: true })
-      .limit(400),
-    supabase.from("post_reactions").select("post_id, profile_id, reaction"),
-  ]);
-
+  let query = supabase
+    .from("posts")
+    .select("id, author_id, body, created_at, updated_at")
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(options.limit ?? 20);
+  if (options.authorId) query = query.eq("author_id", options.authorId);
+  if (options.query) query = query.ilike("body", "%" + options.query.replace(/[%_]/g, "") + "%");
+  const { data: posts, error: postsError } = await query;
   if (postsError) throw postsError;
-  if (commentsError) throw commentsError;
-  if (reactionsError) throw reactionsError;
-
   const postRows = (posts ?? []) as PostRow[];
-  const commentRows = (comments ?? []) as CommentRow[];
-  const reactionRows = (reactions ?? []) as ReactionRow[];
+  const ids = postRows.map((post) => post.id);
+  const commentRows: CommentRow[] = [];
+  const reactionRows: ReactionRow[] = [];
+  if (ids.length) {
+    await Promise.all([
+      (async () => {
+        for (let offset = 0; ; offset += 1000) {
+          const { data, error } = await supabase!
+            .from("post_comments")
+            .select("id, post_id, author_id, body, created_at")
+            .in("post_id", ids)
+            .order("created_at")
+            .order("id")
+            .range(offset, offset + 999);
+          if (error) throw error;
+          commentRows.push(...((data ?? []) as CommentRow[]));
+          if ((data?.length ?? 0) < 1000) break;
+        }
+      })(),
+      (async () => {
+        for (let offset = 0; ; offset += 1000) {
+          const { data, error } = await supabase!
+            .from("post_reactions")
+            .select("post_id, profile_id, reaction")
+            .in("post_id", ids)
+            .order("post_id")
+            .order("profile_id")
+            .range(offset, offset + 999);
+          if (error) throw error;
+          reactionRows.push(...((data ?? []) as ReactionRow[]));
+          if ((data?.length ?? 0) < 1000) break;
+        }
+      })(),
+    ]);
+  }
   const profiles = await profileMap([
     ...postRows.map((post) => post.author_id),
     ...commentRows.map((comment) => comment.author_id),
@@ -264,7 +248,10 @@ export async function loadFeedFromSupabase() {
         authorId: post.author_id,
         auteur: displayName(author),
         authorAvatarUrl: author?.avatar_url ?? undefined,
-        type: payload.type ?? "Membre",
+        type:
+          payload.type === "Officiel" || payload.type === "Pédagogie"
+            ? "Membre"
+            : (payload.type ?? "Membre"),
         heure: relativeTime(post.created_at),
         contenu: payload.sharedFrom
           ? `${payload.text}\n\nPublication partagée de ${payload.sharedFrom.author} : ${payload.sharedFrom.text}`
@@ -291,7 +278,7 @@ export async function loadFeedFromSupabase() {
     });
 
   const payload = { posts: mappedPosts, reactions: myReactions };
-  writeCache(userId, "feed", payload);
+  if (!options.authorId && !options.query) writeCache(userId, "feed", payload);
   return payload;
 }
 
@@ -300,9 +287,9 @@ export function readCachedFeed(userId?: string): FeedPayload | null {
 }
 
 export async function createRemotePost(text: string, type: Post["type"], mediaUrl = "") {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId || !text.trim()) return;
+  if (!userId || !text.trim()) throw new Error("Reconnectez-vous et saisissez un message.");
   const { error } = await supabase.from("posts").insert({
     author_id: userId,
     body: serializePayload({ text: text.trim(), type, mediaUrl: mediaUrl || undefined }),
@@ -311,39 +298,24 @@ export async function createRemotePost(text: string, type: Post["type"], mediaUr
 }
 
 export async function uploadPostMedia(file: File) {
-  const fallback = () =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-
-  if (!supabase) return fallback();
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId) return fallback();
-
-  const extension =
-    file.name
-      .split(".")
-      .pop()
-      ?.toLowerCase()
-      .replace(/[^a-z0-9]/g, "") || "jpg";
-  const path = `${userId}/post-${Date.now()}.${extension}`;
-  const { error } = await supabase.storage.from(postMediaBucket).upload(path, file, {
-    cacheControl: "3600",
-    upsert: true,
-  });
-  if (error) return fallback();
-
+  if (!userId) throw new Error("Reconnectez-vous pour ajouter une image.");
+  const optimized = await photoToWebP(file);
+  const path = userId + "/post-" + crypto.randomUUID() + ".webp";
+  const { error } = await supabase.storage
+    .from(postMediaBucket)
+    .upload(path, optimized, { contentType: "image/webp", cacheControl: "3600", upsert: false });
+  if (error) throw error;
   const { data } = supabase.storage.from(postMediaBucket).getPublicUrl(path);
-  return data.publicUrl || fallback();
+  if (!data.publicUrl) throw new Error("L’image n’a pas pu être enregistrée.");
+  return data.publicUrl;
 }
 
 export async function updateRemotePost(post: Post, text: string) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId || !text.trim()) return;
+  if (!userId || !text.trim()) throw new Error("Reconnectez-vous et saisissez un message.");
   const { error } = await supabase
     .from("posts")
     .update({
@@ -355,9 +327,9 @@ export async function updateRemotePost(post: Post, text: string) {
 }
 
 export async function deleteRemotePost(postId: string) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) throw new Error("Reconnectez-vous pour continuer.");
   const { data: ownedPost, error: ownedError } = await supabase
     .from("posts")
     .select("id")
@@ -366,8 +338,6 @@ export async function deleteRemotePost(postId: string) {
     .maybeSingle();
   if (ownedError) throw ownedError;
   if (!ownedPost) return;
-  await supabase.from("post_comments").delete().eq("post_id", postId);
-  await supabase.from("post_reactions").delete().eq("post_id", postId);
   const { error } = await supabase.from("posts").delete().eq("id", postId).eq("author_id", userId);
   if (error) throw error;
 }
@@ -377,9 +347,9 @@ export async function setRemoteReaction(
   reaction: ReactionKind,
   current?: ReactionKind,
 ) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) throw new Error("Reconnectez-vous pour continuer.");
   const { error: deleteError } = await supabase
     .from("post_reactions")
     .delete()
@@ -396,9 +366,9 @@ export async function setRemoteReaction(
 }
 
 export async function createRemoteComment(postId: string, text: string) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId || !text.trim()) return;
+  if (!userId || !text.trim()) throw new Error("Reconnectez-vous et saisissez un message.");
   const { error } = await supabase.from("post_comments").insert({
     post_id: postId,
     author_id: userId,
@@ -408,9 +378,9 @@ export async function createRemoteComment(postId: string, text: string) {
 }
 
 export async function deleteRemoteComment(postId: string, commentId: string) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) throw new Error("Reconnectez-vous pour continuer.");
   const [{ data: comment, error: commentError }, { data: post, error: postError }] =
     await Promise.all([
       supabase.from("post_comments").select("id, author_id").eq("id", commentId).maybeSingle(),
@@ -424,9 +394,9 @@ export async function deleteRemoteComment(postId: string, commentId: string) {
 }
 
 export async function shareRemotePost(post: Post, note: string) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) throw new Error("Reconnectez-vous pour continuer.");
   const { error } = await supabase.from("posts").insert({
     author_id: userId,
     body: serializePayload({
@@ -442,7 +412,7 @@ export async function shareRemotePost(post: Post, note: string) {
   if (error) throw error;
 }
 
-export async function loadNetworkFromSupabase() {
+export async function loadNetworkFromSupabase(): Promise<NetworkPayload | null> {
   if (!supabase) return null;
   const userId = await currentUserId();
   if (!userId) return null;
@@ -470,9 +440,25 @@ export async function loadNetworkFromSupabase() {
     addressee_id: string;
     status: string;
   }>;
-  const members = ((profiles ?? []) as ProfileRow[])
+  // Existing relationships must not disappear because a profile is incomplete or outside discovery's limit.
+  const linkedProfiles = await profileMap(
+    connectionRows
+      .flatMap((row) => [row.requester_id, row.addressee_id])
+      .filter((id) => id !== userId),
+  );
+  const allProfiles = new Map(
+    ((profiles ?? []) as ProfileRow[]).map((profile) => [profile.id, profile]),
+  );
+  linkedProfiles.forEach((profile, id) => allProfiles.set(id, profile));
+  connectionRows.sort((a, b) => Number(b.status === "accepted") - Number(a.status === "accepted"));
+  const members: NetworkMember[] = [...allProfiles.values()]
     .filter((profile) => {
-      return !isInternalTestProfile(profile) && profile.relation_enabled !== false;
+      return (
+        profile.relation_enabled !== false ||
+        connectionRows.some(
+          (item) => item.requester_id === profile.id || item.addressee_id === profile.id,
+        )
+      );
     })
     .map((profile) => {
       const relation = connectionRows.find(
@@ -494,7 +480,7 @@ export async function loadNetworkFromSupabase() {
       };
     });
 
-  const payload = {
+  const payload: NetworkPayload = {
     received: members.filter((member) => {
       const relation = connectionRows.find((item) => item.id === member.requestId);
       return relation?.addressee_id === userId && relation.status === "pending";
@@ -534,7 +520,7 @@ export async function loadMemberProfile(profileId: string): Promise<NetworkMembe
 }
 
 export async function sendRemoteConnection(addresseeId: string) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
   if (!userId || userId === addresseeId) return;
   const { error } = await supabase.from("connections").insert({
@@ -546,9 +532,9 @@ export async function sendRemoteConnection(addresseeId: string) {
 }
 
 export async function removeRemoteConnection(requestId: string) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) throw new Error("Reconnectez-vous pour continuer.");
   const { error } = await supabase
     .from("connections")
     .delete()
@@ -558,9 +544,9 @@ export async function removeRemoteConnection(requestId: string) {
 }
 
 export async function answerRemoteConnection(requestId: string, status: "accepted" | "rejected") {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) throw new Error("Reconnectez-vous pour continuer.");
   const { data: relation, error: relationError } = await supabase
     .from("connections")
     .select("id, requester_id, addressee_id")
@@ -577,7 +563,7 @@ export async function answerRemoteConnection(requestId: string, status: "accepte
   if (error) throw error;
 
   if (status === "accepted" && relation?.requester_id) {
-    await findOrCreateConversation(relation.requester_id);
+    // The conversation is created atomically when the first message is sent.
   }
 }
 
@@ -604,27 +590,19 @@ export async function findOrCreateConversation(otherProfileId: string) {
     if (existing) return existing as string;
   }
 
-  const conversationId = crypto.randomUUID();
-  const { error: conversationError } = await supabase
-    .from("conversations")
-    .insert({ id: conversationId });
-  if (conversationError) {
-    const { error: fallbackError } = await supabase
-      .from("conversations")
-      .insert({ id: conversationId, created_by: userId });
-    if (fallbackError) throw fallbackError;
-  }
-
-  const { error: membersError } = await supabase.from("conversation_members").insert([
-    { conversation_id: conversationId, profile_id: userId },
-    { conversation_id: conversationId, profile_id: otherProfileId },
-  ]);
-  if (membersError) throw membersError;
-
-  return conversationId;
+  const { data, error } = await supabase.rpc("start_direct_conversation", {
+    peer_id: otherProfileId,
+  });
+  if (error)
+    throw new Error(
+      error.code === "PGRST202"
+        ? "La création sécurisée des conversations attend la mise à jour du serveur."
+        : error.message,
+    );
+  return data as string;
 }
 
-export async function loadConversationsFromSupabase() {
+export async function loadConversationsFromSupabase(): Promise<ConversationItem[] | null> {
   if (!supabase) return null;
   const userId = await currentUserId();
   if (!userId) return null;
@@ -643,15 +621,25 @@ export async function loadConversationsFromSupabase() {
     }>
   ).map((member) => member.conversation_id);
   const myReadDates = new Map(
-    ((memberships ?? []) as Array<{
-      conversation_id: string;
-      last_read_at: string | null;
-    }>).map((member) => [
+    (
+      (memberships ?? []) as Array<{
+        conversation_id: string;
+        last_read_at: string | null;
+      }>
+    ).map((member) => [
       member.conversation_id,
       member.last_read_at ? new Date(member.last_read_at).getTime() : 0,
     ]),
   );
+  const receipts = await loadReadReceipts(userId);
   const localReadDates = readLocalConversationReads(userId);
+  for (const receipt of receipts)
+    if (receipt.kind === "conversation") {
+      localReadDates.set(
+        receipt.item_id,
+        Math.max(localReadDates.get(receipt.item_id) ?? 0, Date.parse(receipt.read_at)),
+      );
+    }
   if (myConversationIds.length === 0) return [];
 
   const [{ data: messages, error: messagesError }, { data: allMembers, error: membersError }] =
@@ -683,7 +671,7 @@ export async function loadConversationsFromSupabase() {
     created_at: string;
   }>;
 
-  const payload = myConversationIds.map((conversationId) => {
+  const payload: ConversationItem[] = myConversationIds.map((conversationId) => {
     const otherMember = memberRows.find(
       (member) => member.conversation_id === conversationId && member.profile_id !== userId,
     );
@@ -695,6 +683,9 @@ export async function loadConversationsFromSupabase() {
     const lastReadAt = Math.max(
       myReadDates.get(conversationId) ?? 0,
       localReadDates.get(conversationId) ?? 0,
+      ...readReceipts(userId)
+        .filter((row) => row.kind === "conversation" && row.item_id === conversationId)
+        .map((row) => Date.parse(row.read_at)),
     );
     const unreadCount = conversationMessages.filter((message) => {
       const sentAt = new Date(message.created_at).getTime();
@@ -723,23 +714,27 @@ export function readCachedConversations(userId?: string): ConversationItem[] | n
   return readCache<ConversationItem[] | null>(userId, "conversations", null);
 }
 
-export async function markConversationRead(conversationId: string) {
+export async function markConversationRead(conversationId: string, lastMessageId?: string) {
   if (!supabase || !conversationId || conversationId.startsWith("peer:")) return;
   const userId = await currentUserId();
-  if (!userId) return;
-  rememberLocalConversationRead(userId, conversationId);
-  const { error } = await supabase
-    .from("conversation_members")
-    .update({ last_read_at: new Date().toISOString() })
+  if (!userId) throw new Error("Reconnectez-vous pour enregistrer la lecture.");
+  // A server timestamp avoids marking future messages read when the device clock is ahead.
+  if (!lastMessageId) return;
+  const { data, error } = await supabase
+    .from("messages")
+    .select("created_at")
+    .eq("id", lastMessageId)
     .eq("conversation_id", conversationId)
-    .eq("profile_id", userId);
-  if (error) return;
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("La lecture n’a pas pu être confirmée.");
+  await persistReceipt(userId, "conversation", conversationId, data.created_at);
 }
 
 export async function sendRemoteMessage(conversationId: string, text: string) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("Connexion indisponible.");
   const userId = await currentUserId();
-  if (!userId || !text.trim()) return;
+  if (!userId || !text.trim()) throw new Error("Reconnectez-vous et saisissez un message.");
   const { error } = await supabase.from("messages").insert({
     conversation_id: conversationId,
     sender_id: userId,
@@ -752,186 +747,123 @@ export async function loadNotificationsFromSupabase(): Promise<Notification[] | 
   if (!supabase) return null;
   const userId = await currentUserId();
   if (!userId) return null;
-
   const [
     { data: connections, error: connectionsError },
-    { data: ownPosts, error: ownPostsError },
-    { data: memberships, error: membershipsError },
+    { data: ownPosts, error: postsError },
+    { data: contributionNotifications, error: contributionNotificationsError },
+    receipts,
   ] = await Promise.all([
-      supabase
-        .from("connections")
-        .select("id, requester_id, addressee_id, status, created_at, updated_at")
-        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
-        .order("updated_at", { ascending: false })
-        .limit(30),
-      supabase.from("posts").select("id, author_id").eq("author_id", userId).limit(80),
-      supabase
-        .from("conversation_members")
-        .select("conversation_id, profile_id, last_read_at")
-        .eq("profile_id", userId),
-    ]);
+    supabase
+      .from("connections")
+      .select("id,requester_id,addressee_id,status,created_at,updated_at")
+      .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`)
+      .order("updated_at", { ascending: false })
+      .limit(30),
+    supabase.from("posts").select("id").eq("author_id", userId).limit(80),
+    supabase
+      .from("contribution_notifications")
+      .select("id,message,kind,created_at,contribution_id")
+      .eq("recipient_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(30),
+    loadReadReceipts(userId),
+  ]);
   if (connectionsError) throw connectionsError;
-  if (ownPostsError) throw ownPostsError;
-  if (membershipsError) throw membershipsError;
-
-  const connectionRows = (connections ?? []) as Array<{
-    id: string;
-    requester_id: string;
-    addressee_id: string;
-    status: string;
-    created_at: string;
-    updated_at: string | null;
-  }>;
-  const ownPostIds = ((ownPosts ?? []) as Array<{ id: string }>).map((post) => post.id);
-  const membershipRows = (memberships ?? []) as Array<{
-    conversation_id: string;
-    profile_id: string;
-    last_read_at: string | null;
-  }>;
-  const conversationIds = membershipRows.map((membership) => membership.conversation_id);
-
-  const [
-    { data: comments, error: commentsError },
-    { data: messageRowsRaw, error: messagesError },
-    { data: conversationMembers, error: conversationMembersError },
-    profiles,
-  ] = await Promise.all([
-    ownPostIds.length
-      ? supabase
-          .from("post_comments")
-          .select("id, post_id, author_id, body, created_at")
-          .in("post_id", ownPostIds)
-          .neq("author_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(30)
-      : Promise.resolve({ data: [], error: null }),
-    conversationIds.length
-      ? supabase
-          .from("messages")
-          .select("id, conversation_id, sender_id, body, created_at")
-          .in("conversation_id", conversationIds)
-          .neq("sender_id", userId)
-          .order("created_at", { ascending: false })
-          .limit(80)
-      : Promise.resolve({ data: [], error: null }),
-    conversationIds.length
-      ? supabase
-          .from("conversation_members")
-          .select("conversation_id, profile_id")
-          .in("conversation_id", conversationIds)
-      : Promise.resolve({ data: [], error: null }),
-    profileMap([
-      ...connectionRows.flatMap((connection) => [connection.requester_id, connection.addressee_id]),
-    ]),
-  ]);
+  if (postsError) throw postsError;
+  if (contributionNotificationsError) throw contributionNotificationsError;
+  const ids = (ownPosts ?? []).map((post) => post.id);
+  const { data: comments, error: commentsError } = ids.length
+    ? await supabase
+        .from("post_comments")
+        .select("id,author_id,created_at")
+        .in("post_id", ids)
+        .neq("author_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(30)
+    : { data: [], error: null };
   if (commentsError) throw commentsError;
-  if (messagesError) throw messagesError;
-  if (conversationMembersError) throw conversationMembersError;
-
-  const commentRows = (comments ?? []) as Array<{
-    id: string;
-    author_id: string;
-    body: string | null;
-    created_at: string;
-  }>;
-  const commentProfiles = await profileMap(commentRows.map((comment) => comment.author_id));
-  const messageRows = (messageRowsRaw ?? []) as Array<{
-    id: string;
-    conversation_id: string;
-    sender_id: string;
-    body: string | null;
-    created_at: string;
-  }>;
-  const conversationMemberRows = (conversationMembers ?? []) as Array<{
-    conversation_id: string;
-    profile_id: string;
-  }>;
-  const messageProfiles = await profileMap([
-    ...messageRows.map((message) => message.sender_id),
-    ...conversationMemberRows.map((member) => member.profile_id),
+  const profiles = await profileMap([
+    ...(connections ?? []).flatMap((item) => [item.requester_id, item.addressee_id]),
+    ...(comments ?? []).map((item) => item.author_id),
   ]);
-
-  const connectionNotifications: Notification[] = connectionRows
-    .filter((connection) => {
-      if (connection.status === "pending") return connection.addressee_id === userId;
-      if (connection.status === "accepted") return connection.requester_id === userId;
-      return false;
-    })
-    .map((connection) => {
-      const otherId =
-        connection.requester_id === userId ? connection.addressee_id : connection.requester_id;
-      if (isInternalTestProfile(profiles.get(otherId))) return null;
-      const other = displayName(profiles.get(otherId));
-      return {
-        id: `connection-${connection.id}-${connection.status}`,
-        texte:
-          connection.status === "pending"
-            ? `${other} vous a envoyé une demande de connexion.`
-            : `${other} a accepté votre demande de connexion.`,
-        heure: relativeTime(connection.updated_at ?? connection.created_at),
-        type: "connexion",
-        nonLue: true,
-      };
-    })
-    .filter((notification): notification is Notification => Boolean(notification));
-
-  const commentNotifications: Notification[] = commentRows
-    .filter((comment) => !isInternalTestProfile(commentProfiles.get(comment.author_id)))
-    .map((comment) => ({
-      id: `comment-${comment.id}`,
-      texte: `${displayName(commentProfiles.get(comment.author_id))} a commenté votre publication.`,
-      heure: relativeTime(comment.created_at),
-      type: "commentaire",
-      nonLue: true,
-    }));
-
-  const lastReadByConversation = new Map(
-    membershipRows.map((membership) => [
-      membership.conversation_id,
-      membership.last_read_at ? new Date(membership.last_read_at).getTime() : 0,
-    ]),
+  const readIds = new Set(
+    [...receipts, ...readReceipts(userId)]
+      .filter((row) => row.kind === "notification")
+      .map((row) => row.item_id),
   );
-  const localReadDates = readLocalConversationReads(userId);
-  const latestUnreadMessages = new Map<string, (typeof messageRows)[number]>();
-  messageRows.forEach((message) => {
-    const lastReadAt = Math.max(
-      lastReadByConversation.get(message.conversation_id) ?? 0,
-      localReadDates.get(message.conversation_id) ?? 0,
-    );
-    const sentAt = new Date(message.created_at).getTime();
-    if (lastReadAt && sentAt <= lastReadAt) return;
-    if (!latestUnreadMessages.has(message.conversation_id)) {
-      latestUnreadMessages.set(message.conversation_id, message);
-    }
-  });
-  const messageNotifications: Notification[] = [...latestUnreadMessages.values()]
-    .filter((message) => !isInternalTestProfile(messageProfiles.get(message.sender_id)))
-    .map((message) => ({
-      id: `message-${message.conversation_id}-${message.id}`,
-      texte: `${displayName(messageProfiles.get(message.sender_id))} vous a envoyé un message.`,
-      heure: relativeTime(message.created_at),
-      type: "message",
-      conversationId: message.conversation_id,
-      nonLue: true,
-    }));
-
-  const payload = [...connectionNotifications, ...commentNotifications, ...messageNotifications]
-    .sort((a, b) => {
-      const parse = (value: string) => {
-        if (value.includes("min")) return Number.parseInt(value, 10) || 0;
-        if (value.includes(" h")) return (Number.parseInt(value.replace(/\D/g, ""), 10) || 0) * 60;
-        if (value.includes(" j")) {
-          return (Number.parseInt(value.replace(/\D/g, ""), 10) || 0) * 1440;
-        }
-        return 0;
-      };
-      return parse(a.heure) - parse(b.heure);
-    })
-    .slice(0, 50);
+  const items: Array<{ date: string; notification: Notification }> = [];
+  for (const connection of connections ?? []) {
+    if (!(
+      (connection.status === "pending" && connection.addressee_id === userId) ||
+      (connection.status === "accepted" && connection.requester_id === userId)
+    ))
+      continue;
+    const otherId =
+      connection.requester_id === userId ? connection.addressee_id : connection.requester_id;
+    if (isInternalTestProfile(profiles.get(otherId))) continue;
+    const id = `connection-${connection.id}-${connection.status}`;
+    const date = connection.updated_at ?? connection.created_at;
+    items.push({
+      date,
+      notification: {
+        id,
+        type: "connexion",
+        nonLue: !readIds.has(id),
+        heure: relativeTime(date),
+        texte:
+          displayName(profiles.get(otherId)) +
+          (connection.status === "pending"
+            ? " vous a envoyé une demande de connexion."
+            : " a accepté votre demande de connexion."),
+      },
+    });
+  }
+  for (const comment of comments ?? []) {
+    if (isInternalTestProfile(profiles.get(comment.author_id))) continue;
+    const id = `comment-${comment.id}`;
+    items.push({
+      date: comment.created_at,
+      notification: {
+        id,
+        type: "commentaire",
+        nonLue: !readIds.has(id),
+        heure: relativeTime(comment.created_at),
+        texte: displayName(profiles.get(comment.author_id)) + " a commenté votre publication.",
+      },
+    });
+  }
+  for (const notification of contributionNotifications ?? []) {
+    const id = `contribution-${notification.id}`;
+    items.push({
+      date: notification.created_at,
+      notification: {
+        id,
+        type: "contribution",
+        nonLue: !readIds.has(id),
+        heure: relativeTime(notification.created_at),
+        texte: notification.message,
+      },
+    });
+  }
+  // Private messages belong to the Messages badge, never to the activity bell.
+  const payload = items
+    .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
+    .slice(0, 50)
+    .map((item) => item.notification);
   writeCache(userId, "notifications", payload);
   return payload;
 }
 
 export function readCachedNotifications(userId?: string): Notification[] | null {
   return readCache<Notification[] | null>(userId, "notifications", null);
+}
+
+export async function reportRemotePost(postId: string, reason: string, details: string) {
+  if (!supabase) throw new Error("Connexion indisponible.");
+  const userId = await currentUserId();
+  if (!userId) throw new Error("Connexion requise.");
+  const { error } = await supabase
+    .from("post_reports")
+    .insert({ post_id: postId, reporter_id: userId, reason, details: details.trim() });
+  if (error) throw error;
 }

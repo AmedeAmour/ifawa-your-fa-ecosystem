@@ -1,0 +1,6 @@
+.env*
+references/
+supabase/
+tests/
+output/
+*.md

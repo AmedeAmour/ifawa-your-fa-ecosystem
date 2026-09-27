@@ -1,6 +1,7 @@
 import { services as fallbackServices } from "@/data/mock";
 import { readCache, writeCache } from "./ifawa-cache";
 import { supabase } from "./supabase";
+import { uploadServiceAudio } from "./service-audio";
 
 const serviceTypeToSlug: Record<string, string> = {
   fa_consultation: "consultation",
@@ -33,8 +34,10 @@ export type ServiceRequest = {
   subject: string;
   deadline: string | null;
   details: string | null;
+  audioPath?: string | null;
   status: string;
   createdAt: string;
+  resultSummary: string | null;
 };
 
 export async function fetchServiceCatalog(): Promise<ServiceCard[]> {
@@ -72,12 +75,14 @@ export async function createServiceRequest({
   subject,
   deadline,
   details,
+  audio,
 }: {
   serviceSlug: string;
   formulaName: string;
   subject: string;
   deadline: string;
   details: string;
+  audio?: File | null;
 }) {
   if (!supabase) throw new Error("La connexion à la plateforme n'est pas configurée.");
 
@@ -88,17 +93,22 @@ export async function createServiceRequest({
 
   if (userError || !user) throw new Error("Connectez-vous pour envoyer une demande.");
 
-  const serviceType = serviceSlugToType[serviceSlug] ?? serviceSlug;
+  const serviceType = serviceSlugToType[serviceSlug];
+  if (!serviceType) throw new Error("Service inconnu.");
+  if (!subject.trim() && !audio)
+    throw new Error("Écrivez votre préoccupation ou ajoutez un audio.");
+  const audioPath = audio ? await uploadServiceAudio(user.id, audio) : null;
   const { data, error } = await supabase
     .from("service_requests")
     .insert({
       requester_id: user.id,
       service_type: serviceType,
-      subject,
+      subject: subject.trim() || "Demande vocale",
       request_details: {
         formule: formulaName,
         delai: deadline || null,
         details: details || null,
+        audio_path: audioPath,
       },
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -106,7 +116,14 @@ export async function createServiceRequest({
     .select("id")
     .single();
 
-  if (error) throw error;
+  if (error) {
+    if (audioPath)
+      await supabase.storage
+        .from("service-audio")
+        .remove([audioPath])
+        .catch(() => {});
+    throw error;
+  }
   return data?.id as string;
 }
 
@@ -121,11 +138,14 @@ export async function loadMyServiceRequests(): Promise<ServiceRequest[]> {
 
   const { data, error } = await supabase
     .from("service_requests")
-    .select("id,service_type,subject,priority,request_details,status,created_at,submitted_at")
+    .select(
+      "id,service_type,subject,priority,request_details,status,created_at,submitted_at,result_summary",
+    )
     .eq("requester_id", user.id)
     .order("created_at", { ascending: false });
 
-  if (error || !data) return [];
+  if (error) throw error;
+  if (!data) return [];
 
   const requests = data.map((request) => ({
     id: request.id,
@@ -133,21 +153,26 @@ export async function loadMyServiceRequests(): Promise<ServiceRequest[]> {
     serviceSlug: serviceTypeToSlug[request.service_type] ?? request.service_type,
     formulaName:
       typeof request.request_details === "object" && request.request_details !== null
-        ? String((request.request_details as Record<string, unknown>).formule ?? "")
+        ? String((request.request_details as Record<string, unknown>)["formule"] ?? "")
         : null,
     subject: request.subject,
     deadline:
       typeof request.request_details === "object" && request.request_details !== null
         ? String(
-            (request.request_details as Record<string, unknown>).delai ?? request.priority ?? "",
+            (request.request_details as Record<string, unknown>)["delai"] ?? request.priority ?? "",
           )
         : request.priority,
     details:
       typeof request.request_details === "object" && request.request_details !== null
-        ? String((request.request_details as Record<string, unknown>).details ?? "")
+        ? String((request.request_details as Record<string, unknown>)["details"] ?? "")
         : null,
     status: request.status,
+    audioPath:
+      typeof request.request_details === "object" && request.request_details !== null
+        ? String((request.request_details as Record<string, unknown>)["audio_path"] ?? "") || null
+        : null,
     createdAt: request.submitted_at ?? request.created_at,
+    resultSummary: request.result_summary,
   }));
   writeCache(user.id, "service-requests", requests);
   return requests;

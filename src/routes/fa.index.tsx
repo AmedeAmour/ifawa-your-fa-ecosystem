@@ -1,18 +1,25 @@
+import { SearchField } from "@/components/ifawa/SearchField";
+import { faSignCatalog } from "@/data/fa-signs";
+import { matchesSearch } from "@/lib/search-text";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Search } from "lucide-react";
 import { Shell } from "@/components/ifawa/Shell";
-import { PageTitle, Panel, Btn } from "@/components/ifawa/primitives";
-import { signes } from "@/data/mock";
+import { PageTitle, Btn } from "@/components/ifawa/primitives";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/fa/")({
   head: () => ({
     meta: [
-      { title: "Bibliothèque du Fa — les 16 signes-mères | IFAWA" },
-      { name: "description", content: "Parcourez les seize signes-mères du Fa : fiches structurées, enseignements, variantes et contributions validées." },
-      { property: "og:title", content: "Bibliothèque du Fa — les 16 signes-mères" },
-      { property: "og:description", content: "Seize fiches structurées, contributions de la communauté Ifawa." },
+      { title: "Les signes du Fa | IFAWA" },
+      {
+        name: "description",
+        content: "Découvrez les 256 signes du Fa dans la bibliothèque Ifawa.",
+      },
+      { property: "og:title", content: "Les signes du Fa" },
+      {
+        property: "og:description",
+        content: "Les seize signes-mères et leurs 240 signes dérivés.",
+      },
     ],
   }),
   component: Bibliotheque,
@@ -20,54 +27,73 @@ export const Route = createFileRoute("/fa/")({
 
 function Bibliotheque() {
   const [q, setQ] = useState("");
-  const liste = signes.filter((s) => s.nom.toLowerCase().includes(q.toLowerCase()));
+  const [category, setCategory] = useState("tous");
+  const liste = faSignCatalog.filter(
+    (s) =>
+      (category === "tous" ||
+        (category === "meres" ? s.type === "signe_mere" : s.type === "autre")) &&
+      (!q.trim() || matchesSearch(`${s.nom} ${s.numero}`, q)),
+  );
 
   return (
     <Shell>
-      <PageTitle kicker="Bibliothèque du Fa">Les seize signes-mères</PageTitle>
+      <PageTitle kicker="Bibliothèque du Fa">Les signes du Fa</PageTitle>
 
-      <Panel tone="deep" className="mb-5">
-        <div className="flex items-center gap-2">
-          <Search className="size-4 text-umber-soft" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Rechercher un signe…"
-            className="w-full bg-transparent text-[14px] outline-none placeholder:text-umber-soft/60"
-          />
-        </div>
-      </Panel>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {liste.map((s, i) => (
-          <Link
-            key={s.slug}
-            to="/fa/$slug"
-            params={{ slug: s.slug }}
+      <SearchField value={q} onChange={setQ} placeholder="Rechercher un signe…" />
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Catégories de signes">
+        {[
+          ["tous", "Tous"],
+          ["meres", "Signes-mères"],
+          ["autres", "Autres signes"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={category === value}
+            onClick={() => setCategory(value ?? "tous")}
             className={cn(
-              "group animate-rise p-4 transition-transform hover:-translate-y-0.5",
-              i % 5 === 1 ? "rounded-2xl bg-forest text-ivory" : "bg-card carved",
+              "rounded-full px-4 py-2 text-sm",
+              category === value ? "bg-forest text-ivory" : "bg-ivory-deep",
             )}
-            style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
           >
-            <p className={cn("label-mono", i % 5 === 1 ? "text-brass" : "text-clay")}>{s.numero}</p>
-            <p className="mt-2 font-display text-[19px] uppercase leading-tight">{s.nom}</p>
-            <p className={cn("mt-1.5 text-[12px] leading-snug", i % 5 === 1 ? "text-ivory/70" : "text-umber-soft")}>
-              {s.soustitre}
-            </p>
-            <p className={cn("label-mono mt-3", i % 5 === 1 ? "text-ivory/50" : "text-umber-soft/70")}>
-              {s.membres} membres
-            </p>
-          </Link>
+            {label}
+          </button>
         ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {liste.map((s, i) => {
+          const className = cn(
+            "group flex h-10 items-center justify-center rounded-full border border-umber/10 px-3 transition-colors focus-visible:outline-2 focus-visible:outline-clay",
+            i % 5 === 1 ? "bg-forest text-ivory hover:bg-forest/90" : "bg-card hover:bg-ivory-deep",
+          );
+          const content = <span className="truncate text-sm font-semibold">{s.nom}</span>;
+          return (
+            <Link
+              key={s.slug}
+              to="/fa/$slug"
+              params={{ slug: s.documentSlug ?? s.slug }}
+              className={className}
+              style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+            >
+              {content}
+            </Link>
+          );
+        })}
       </div>
 
       {liste.length === 0 && (
-        <p className="py-10 text-center text-[14px] text-umber-soft">Aucun signe ne correspond à « {q} ».</p>
+        <p className="py-10 text-center text-[14px] text-umber-soft">
+          {`Aucun signe ne correspond à « ${q} ».`}
+        </p>
       )}
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <Btn to="/contribuer" variant="outline">Proposer une contribution</Btn>
+        <p className="text-sm text-umber-soft">
+          256 signes répertoriés. Chaque signe dispose d’une fiche détaillée.
+        </p>
+        <Btn to="/contribuer" variant="outline">
+          Proposer une contribution
+        </Btn>
       </div>
     </Shell>
   );

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, Compass } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Image as ImageIcon, Compass, Bookmark } from "lucide-react";
 import { Shell } from "@/components/ifawa/Shell";
 import { PostCard } from "@/components/ifawa/PostCard";
 import { Btn, Empty, Kicker, Monogram, Panel, SectionTitle } from "@/components/ifawa/primitives";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/ifawa-social";
 import { decouverte } from "@/data/mock";
 import { cn } from "@/lib/utils";
+import { useRefresh } from "@/hooks/use-refresh";
 
 export const Route = createFileRoute("/accueil")({
   head: () => ({
@@ -33,7 +34,10 @@ export const Route = createFileRoute("/accueil")({
 });
 
 function Accueil() {
-  const { posts, profil, currentUserId } = useApp();
+  const { posts, profil, currentUserId, hiddenPostIds, savedPostIds } = useApp();
+  const [pageSize, setPageSize] = useState(20);
+  const [feedError, setFeedError] = useState("");
+  const [publishError, setPublishError] = useState("");
   const [texte, setTexte] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -43,19 +47,22 @@ function Accueil() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const filtres = ["Tout", "Membres", "Officiel", "Témoignages"];
+  const filtres = ["Tout", "Témoignages", "Questions", "Enregistrés"];
   const types = ["Témoignage", "Question", "Contribution"] as const;
 
-  async function refreshFeed() {
+  const refreshFeed = useCallback(async () => {
     try {
-      const remote = await loadFeedFromSupabase();
-      if (remote) actions.remplacerPosts(remote.posts, remote.reactions);
+      const remote = await loadFeedFromSupabase({ limit: pageSize });
+      if (remote && actions.isCurrentUser(currentUserId))
+        actions.remplacerPosts(remote.posts, remote.reactions);
+      setFeedError("");
     } catch {
-      // The local feed remains available if the remote feed is temporarily unreachable.
+      setFeedError("Le fil n’a pas pu être actualisé. Vérifiez votre connexion et réessayez.");
     } finally {
       setLoadingFeed(false);
     }
-  }
+  }, [currentUserId, pageSize]);
+  useRefresh(refreshFeed, 30000);
 
   useEffect(() => {
     const cached = readCachedFeed(currentUserId);
@@ -64,21 +71,36 @@ function Accueil() {
       setLoadingFeed(false);
     }
     void refreshFeed();
-  }, [currentUserId]);
+  }, [currentUserId, refreshFeed]);
 
-  const visibles = posts.filter((p) =>
-    filtre === "Tout"
-      ? true
-      : filtre === "Officiel"
-        ? p.type === "Officiel" || p.type === "Pédagogie"
-        : filtre === "Témoignages"
-          ? p.type === "Témoignage"
-          : p.auteur.startsWith("@"),
-  );
+  const visibles = posts
+    .filter((p) => !hiddenPostIds.includes(p.id))
+    .filter((p) =>
+      filtre === "Tout"
+        ? true
+        : filtre === "Enregistrés"
+          ? savedPostIds.includes(p.id)
+          : filtre === "Témoignages"
+            ? p.type === "Témoignage"
+            : p.type === "Question",
+    );
 
   return (
     <Shell>
       {!profil.initie && <DecouverteBloc />}
+      {feedError && (
+        <div role="alert" className="mb-4 rounded-xl bg-clay/10 p-4 text-sm text-clay">
+          {feedError}{" "}
+          <button className="min-h-11 font-semibold underline" onClick={() => void refreshFeed()}>
+            Réessayer
+          </button>
+        </div>
+      )}
+      {filtre === "Enregistrés" && (
+        <p className="mb-4 text-sm text-umber-soft">
+          Vos publications enregistrées sur cet appareil, parmi les publications chargées.
+        </p>
+      )}
 
       <Panel className="mb-5 animate-rise">
         <div className="flex items-center gap-3 border-b border-umber/10 pb-3">
@@ -102,8 +124,12 @@ function Accueil() {
                 setComposerOpen(true);
               }}
               className={cn(
-                "min-w-0 whitespace-nowrap rounded-full px-2 py-2 text-center font-mono text-[8.5px] uppercase tracking-[0.08em] transition-colors sm:text-[9px] sm:tracking-[0.14em]",
-                type === item ? "bg-umber text-ivory" : "bg-ivory-deep text-umber-soft",
+                "min-w-0 whitespace-nowrap rounded-full px-2 py-1 text-center text-[11px] font-medium leading-4 transition-colors",
+                item === "Témoignage"
+                  ? "bg-clay/10 text-clay hover:bg-clay/20"
+                  : item === "Question"
+                    ? "bg-forest/10 text-forest hover:bg-forest/20"
+                    : "bg-brass/15 text-brass hover:bg-brass/25",
               )}
             >
               {item}
@@ -145,7 +171,7 @@ function Accueil() {
               <button
                 onClick={() => fileRef.current?.click()}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-full px-3 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+                  "inline-flex items-center gap-2 rounded-full px-3 py-2 font-medium text-[13px] transition-colors",
                   imageUrl ? "bg-forest text-ivory" : "bg-card carved text-umber-soft",
                 )}
               >
@@ -159,7 +185,7 @@ function Accueil() {
                     setImageFile(null);
                     if (fileRef.current) fileRef.current.value = "";
                   }}
-                  className="font-mono text-[10px] uppercase tracking-[0.16em] text-umber-soft hover:text-clay"
+                  className="font-medium text-[13px] text-umber-soft hover:text-clay"
                 >
                   Retirer
                 </button>
@@ -168,7 +194,7 @@ function Accueil() {
                 <button
                   type="button"
                   onClick={() => setComposerOpen(false)}
-                  className="font-mono text-[10px] uppercase tracking-[0.16em] text-umber-soft hover:text-clay"
+                  className="font-medium text-[13px] text-umber-soft hover:text-clay"
                 >
                   Annuler
                 </button>
@@ -177,19 +203,22 @@ function Accueil() {
                 onClick={async () => {
                   const content = texte;
                   const preview = imageUrl;
-                  actions.publier(content, preview, type);
-                  setTexte("");
-                  setImageUrl("");
-                  setImageFile(null);
-                  if (fileRef.current) fileRef.current.value = "";
-                  setComposerOpen(false);
+                  if (publishing) return;
+                  setPublishError("");
                   setPublishing(true);
                   try {
                     const media = imageFile ? await uploadPostMedia(imageFile) : preview;
                     await createRemotePost(content, type, media);
+                    setTexte("");
+                    setImageUrl("");
+                    setImageFile(null);
+                    if (fileRef.current) fileRef.current.value = "";
+                    setComposerOpen(false);
                     await refreshFeed();
                   } catch {
-                    // Keep the optimistic local publication visible.
+                    setPublishError(
+                      "Publication non envoyée. Votre texte est conservé : vous pouvez réessayer.",
+                    );
                   } finally {
                     setPublishing(false);
                   }
@@ -200,6 +229,11 @@ function Accueil() {
                 {publishing ? "Publication..." : "Publier"}
               </Btn>
             </div>
+            {publishError && (
+              <p role="alert" className="mt-3 text-sm text-clay">
+                {publishError}
+              </p>
+            )}
             {imageUrl && (
               <img
                 src={imageUrl}
@@ -211,19 +245,28 @@ function Accueil() {
         )}
       </Panel>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div
+        className="mb-4 flex items-center gap-1.5"
+        role="group"
+        aria-label="Filtrer les publications"
+      >
         {filtres.map((f) => (
           <button
             key={f}
+            type="button"
+            aria-pressed={filtre === f}
+            aria-label={f}
+            title={f}
             onClick={() => setFiltre(f)}
             className={cn(
-              "rounded-full px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors",
+              "flex min-h-10 items-center justify-center rounded-full px-3 text-xs font-medium transition-colors",
+              f === "Enregistrés" ? "ml-auto shrink-0" : "min-w-0",
               filtre === f
                 ? "bg-umber text-ivory"
                 : "bg-ivory-deep text-umber-soft hover:bg-ivory-deep/70",
             )}
           >
-            {f}
+            {f === "Enregistrés" ? <Bookmark className="size-4" aria-hidden="true" /> : f}
           </button>
         ))}
       </div>
@@ -237,6 +280,13 @@ function Accueil() {
           titre="Aucune publication"
           texte="Les publications de la communauté apparaîtront ici."
         />
+      )}
+      {posts.length >= pageSize && (
+        <div className="mt-4 text-center">
+          <Btn variant="outline" onClick={() => setPageSize((size) => size + 20)}>
+            Voir plus de publications
+          </Btn>
+        </div>
       )}
     </Shell>
   );
@@ -254,16 +304,19 @@ function DecouverteBloc() {
             style={{ animationDelay: `${i * 40}ms` }}
           >
             <Kicker>{String(i + 1).padStart(2, "0")}</Kicker>
-            <p className="mt-2 font-display text-[18px] uppercase leading-tight">{d.titre}</p>
+            <p className="mt-2 font-display text-[18px] font-semibold leading-tight tracking-tight">
+              {d.titre}
+            </p>
             <p className="mt-1.5 text-[13px] leading-relaxed text-umber-soft">{d.texte}</p>
           </div>
         ))}
       </div>
       <Link
-        to="/services/initiation"
+        to="/services/$slug"
+        params={{ slug: "initiation" }}
         className="mt-3 flex items-center justify-between rounded-2xl bg-clay px-5 py-4 text-ivory transition-colors hover:bg-clay/90"
       >
-        <span className="font-display text-[20px] uppercase leading-none">
+        <span className="font-display text-[20px] font-semibold leading-tight tracking-tight">
           Demander une initiation
         </span>
         <Compass className="size-5" />

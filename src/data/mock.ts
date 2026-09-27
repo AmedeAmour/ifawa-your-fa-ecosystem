@@ -1,81 +1,5 @@
-export const DEMO_NOTICE = "Contenu à valider";
-
-export type Signe = {
-  slug: string;
-  nom: string;
-  numero: string;
-  soustitre: string;
-  presentation: string;
-  signification: string;
-  enseignements: string[];
-  interdits: string[];
-  recommandations: string[];
-  correspondances: { cle: string; valeur: string }[];
-  variantes: string[];
-  membres: number;
-  contributions: number;
-};
-
-const base = (
-  slug: string,
-  nom: string,
-  numero: string,
-  soustitre: string,
-  membres: number,
-  contributions: number,
-): Signe => ({
-  slug,
-  nom,
-  numero,
-  soustitre,
-  membres,
-  contributions,
-  presentation: `${nom} est une fiche de référence organisée pour la consultation des enseignements, interdits, recommandations et correspondances du signe.`,
-  signification: `Ce signe est présenté autour des thèmes de ${soustitre.toLowerCase()}, avec un contenu structuré pour faciliter la lecture et la contribution validée.`,
-  enseignements: [
-    "Enseignement principal à consulter dans la fiche du signe.",
-    "Point de compréhension complémentaire à relier au parcours du membre.",
-    "Repère de lecture destiné à accompagner les contributions validées.",
-  ],
-  interdits: [
-    "Interdit rapporté à documenter avec validation.",
-    "Point de prudence à confirmer avant publication définitive.",
-  ],
-  recommandations: [
-    "Recommandation à rattacher au contenu validé.",
-    "Orientation de lecture pour les membres du même signe.",
-    "Repère pratique à compléter lors de la validation éditoriale.",
-  ],
-  correspondances: [
-    { cle: "Élément", valeur: "À valider" },
-    { cle: "Période", valeur: "À valider" },
-    { cle: "Couleur", valeur: "À valider" },
-    { cle: "Jour", valeur: "À valider" },
-  ],
-  variantes: [
-    "Variante régionale fictive A — formulation différente rapportée par des contributeurs.",
-    "Variante régionale fictive B.",
-  ],
-});
-
-export const signes: Signe[] = [
-  base("gbe-medji", "Gbé Mêdji", "01", "Le mouvement et l'élan", 218, 12),
-  base("yekou-medji", "Yèkou Mêdji", "02", "La patience et l'écoute", 176, 9),
-  base("woli-medji", "Woli Mêdji", "03", "L'ordre et la justice", 154, 15),
-  base("di-medji", "Di Mêdji", "04", "La sagesse contemplative", 131, 7),
-  base("losso-medji", "Losso Mêdji", "05", "L'attachement et le soin", 142, 11),
-  base("winlin-medji", "Winlin Mêdji", "06", "La lumière intérieure", 119, 6),
-  base("abla-medji", "Abla Mêdji", "07", "La parole mesurée", 98, 5),
-  base("aklan-medji", "Aklan Mêdji", "08", "La constance", 104, 8),
-  base("guda-medji", "Guda Mêdji", "09", "Le renouvellement", 127, 10),
-  base("sa-medji", "Sa Mêdji", "10", "La protection", 111, 4),
-  base("ka-medji", "Ka Mêdji", "11", "La mémoire", 87, 6),
-  base("trukpin-medji", "Trukpin Mêdji", "12", "L'endurance", 93, 3),
-  base("tula-medji", "Tula Mêdji", "13", "L'équilibre", 108, 7),
-  base("lete-medji", "Lètè Mêdji", "14", "La transmission", 96, 6),
-  base("tche-medji", "Tchè Mêdji", "15", "Le discernement", 89, 5),
-  base("fu-medji", "Fu Mêdji", "16", "L'accomplissement", 121, 9),
-];
+import { signes } from "./fa-signs";
+export { signes } from "./fa-signs";
 
 export const signeNoms = signes.map((s) => s.nom);
 
@@ -86,7 +10,7 @@ export type Membre = {
   annee: number;
   satisfaction: string;
   temoignage: string;
-  memeSigne?: boolean;
+  memeSigne?: boolean | undefined;
   connexions: number;
 };
 
@@ -173,28 +97,28 @@ export const membres: Membre[] = [
 
 export type Post = {
   id: string;
-  authorId?: string;
+  authorId?: string | undefined;
   auteur: string;
-  authorAvatarUrl?: string;
-  signe?: string;
+  authorAvatarUrl?: string | undefined;
+  signe?: string | undefined;
   type: "Membre" | "Témoignage" | "Pédagogie" | "Officiel" | "Signe" | "Question" | "Contribution";
   heure: string;
   contenu: string;
-  image?: boolean;
-  mediaUrl?: string;
+  image?: boolean | undefined;
+  mediaUrl?: string | undefined;
   reactions: number;
   commentaires: Commentaire[];
-  canEdit?: boolean;
+  canEdit?: boolean | undefined;
 };
 
 export type Commentaire = {
   id: string;
-  authorId?: string;
+  authorId?: string | undefined;
   auteur: string;
-  authorAvatarUrl?: string;
+  authorAvatarUrl?: string | undefined;
   texte: string;
   heure: string;
-  canDelete?: boolean;
+  canDelete?: boolean | undefined;
 };
 
 export const posts: Post[] = [
@@ -331,7 +255,7 @@ export type Notification = {
   texte: string;
   heure: string;
   type: "connexion" | "commentaire" | "contribution" | "service" | "signe" | "message";
-  conversationId?: string;
+  conversationId?: string | undefined;
   nonLue: boolean;
 };
 
@@ -429,20 +353,20 @@ export const formulesConsultation = [
   {
     nom: "Standard",
     delai: "Jusqu'à 72 h",
-    prix: "15 000 F",
+    prix: "15 000 FCFA",
     points: ["Retour écrit", "1 question de suivi", "Historique conservé"],
   },
   {
     nom: "Prioritaire",
     delai: "Jusqu'à 24 h",
-    prix: "28 000 F",
+    prix: "28 000 FCFA",
     points: ["Retour écrit détaillé", "3 questions de suivi", "Traitement accéléré"],
     recommande: true,
   },
   {
     nom: "Express",
     delai: "Traitement prioritaire",
-    prix: "45 000 F",
+    prix: "45 000 FCFA",
     points: ["Retour approfondi", "Questions illimitées 7 j", "Interlocuteur dédié"],
   },
 ];
@@ -452,20 +376,20 @@ export const formulesEtude = [
     nom: "3 praticiens",
     delai: "10 jours",
     rapport: "Rapport comparatif simple",
-    prix: "60 000 F",
+    prix: "60 000 FCFA",
   },
   {
     nom: "5 praticiens",
     delai: "15 jours",
     rapport: "Rapport comparatif étendu",
-    prix: "95 000 F",
+    prix: "95 000 FCFA",
     recommande: true,
   },
   {
     nom: "7 praticiens",
     delai: "21 jours",
     rapport: "Rapport comparatif complet + synthèse",
-    prix: "140 000 F",
+    prix: "140 000 FCFA",
   },
 ];
 
@@ -475,14 +399,14 @@ export const formulesAccompagnement = [
     questions: "6 questions incluses",
     suivi: "1 compte rendu mensuel",
     avantages: ["Dossier Fa personnel", "Carnet de parcours"],
-    prix: "75 000 F",
+    prix: "75 000 FCFA",
   },
   {
     nom: "6 mois",
     questions: "15 questions incluses",
     suivi: "2 comptes rendus mensuels",
     avantages: ["Dossier Fa personnel", "Carnet de parcours", "1 étude de signe offerte"],
-    prix: "135 000 F",
+    prix: "135 000 FCFA",
     recommande: true,
   },
   {
@@ -495,7 +419,7 @@ export const formulesAccompagnement = [
       "2 études de signe",
       "Interlocuteur dédié",
     ],
-    prix: "240 000 F",
+    prix: "240 000 FCFA",
   },
 ];
 

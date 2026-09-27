@@ -1,6 +1,16 @@
+import { useFaCorpus } from "@/hooks/use-fa-corpus";
+import { SearchField } from "./SearchField";
+import { AudioRecorder } from "./AudioRecorder";
+import { matchesSearch } from "@/lib/search-text";
+import { SignDossier } from "./SignDossier";
+import { BasicSignPage } from "./BasicSignPage";
+import { faSignCatalog } from "@/data/fa-signs";
+import coverImage from "@/assets/cover.jpg";
+import { useRefresh } from "@/hooks/use-refresh";
+import { loadFeedFromSupabase } from "@/lib/ifawa-social";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   BookOpen,
@@ -34,6 +44,7 @@ import {
   createContribution,
   loadMyContributions,
   readCachedContributions,
+  resubmitContribution,
   type ContributionItem,
 } from "@/lib/ifawa-contributions";
 import {
@@ -131,21 +142,26 @@ export function ReseauPage() {
   > | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"suggestions" | "invitations" | "connections">("suggestions");
+  const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<NetworkMember | null>(null);
   const [networkStatus, setNetworkStatus] = useState("");
 
-  async function refreshNetwork() {
+  const refreshNetwork = useCallback(async () => {
     try {
       const next = await loadNetworkFromSupabase();
+      if (!actions.isCurrentUser(currentUserId)) return;
       setRemoteNetwork(next ?? { received: [], sent: [], accepted: [], suggestions: [] });
       const notifications = await loadNotificationsFromSupabase();
       if (notifications) actions.remplacerNotifications(notifications);
     } catch {
-      setRemoteNetwork({ received: [], sent: [], accepted: [], suggestions: [] });
+      setNetworkStatus(
+        "Le réseau n’a pas pu être actualisé. Vos dernières connexions restent affichées.",
+      );
     } finally {
       setLoading(false);
     }
-  }
+  }, [currentUserId]);
 
   useEffect(() => {
     const cached = readCachedNetwork(currentUserId);
@@ -154,7 +170,7 @@ export function ReseauPage() {
       setLoading(false);
     }
     void refreshNetwork();
-  }, [currentUserId]);
+  }, [currentUserId, refreshNetwork]);
 
   const network = remoteNetwork ?? { received: [], sent: [], accepted: [], suggestions: [] };
   const searchable = query.trim().toLowerCase();
@@ -163,6 +179,19 @@ export function ReseauPage() {
   const accepted = network.accepted.filter(matches);
   const suggestions = [...network.sent, ...network.suggestions].filter(matches);
   const received = network.received.filter(matches);
+
+  async function networkAction(action: () => Promise<unknown>) {
+    setNetworkStatus("");
+    setBusy(true);
+    try {
+      await action();
+      await refreshNetwork();
+    } catch {
+      setNetworkStatus("Cette action n’a pas pu être enregistrée. Réessayez.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   function openConversation(member: NetworkMember) {
     setNetworkStatus("");
@@ -173,158 +202,159 @@ export function ReseauPage() {
     });
   }
 
+  const visibleMembers =
+    tab === "suggestions" ? suggestions : tab === "invitations" ? received : accepted;
   return (
     <Shell>
-      <PageTitle kicker="Réseau">Membres et connexions</PageTitle>
-
-      <Panel tone="deep" className="mb-5">
-        <div className="flex items-center gap-2 rounded-full bg-card/80 px-3 py-2">
-          <Search className="size-4 text-umber-soft" />
-          <input
-            className="w-full bg-transparent text-[15px] outline-none"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Rechercher un membre ou une connexion"
-          />
-        </div>
-        {networkStatus && <p className="mt-3 text-[13px] text-clay">{networkStatus}</p>}
-      </Panel>
-
-      <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-        <Panel>
-          <SectionHeader icon={Users} title="Demandes reçues" />
-          <div className="space-y-3">
-            {loading ? (
-              <Empty titre="Chargement" texte="Vérification de vos demandes de connexion." />
-            ) : received.length ? (
-              received.map((member) => (
-                <RemoteMemberRow
-                  key={member.id}
-                  member={member}
-                  onSelect={() => setSelected(member)}
-                >
+      <PageTitle kicker="La communauté Ifawa">Réseau</PageTitle>
+      <SearchField value={query} onChange={setQuery} placeholder="Rechercher un membre…" />
+      <div className="mb-5 grid grid-cols-3 gap-2" role="group" aria-label="Afficher les membres">
+        {(
+          [
+            ["suggestions", "Découvrir", network.suggestions.length + network.sent.length],
+            ["invitations", "Invitations", network.received.length],
+            ["connections", "Connexions", network.accepted.length],
+          ] as const
+        ).map(([value, label, count]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={tab === value}
+            onClick={() => setTab(value)}
+            className={cn(
+              "flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-full px-2 text-xs font-semibold transition-colors sm:text-sm",
+              tab === value ? "bg-forest text-ivory" : "bg-card text-umber hover:bg-ivory-deep",
+            )}
+          >
+            {label}
+            {value === "invitations" && count > 0 && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-xs",
+                  tab === value ? "bg-white/15" : "bg-umber/5",
+                )}
+              >
+                {count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      {networkStatus && (
+        <p role="status" className="mb-4 rounded-xl bg-clay/10 p-3 text-sm text-clay">
+          {networkStatus}
+        </p>
+      )}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">
+          {tab === "suggestions"
+            ? "Des membres à découvrir"
+            : tab === "invitations"
+              ? "Vos invitations"
+              : "Vos connexions"}
+        </h2>
+        <Users aria-hidden="true" className="size-5 text-umber-soft" />
+      </div>
+      {loading ? (
+        <Empty titre="Chargement du réseau" texte="Vos membres et invitations arrivent." />
+      ) : visibleMembers.length ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {visibleMembers.map((member) => (
+            <RemoteMemberRow key={member.id} member={member} onSelect={() => setSelected(member)}>
+              {tab === "invitations" ? (
+                <>
                   <Btn
-                    onClick={async () => {
-                      if (!member.requestId) return;
-                      await answerRemoteConnection(member.requestId, "accepted");
-                      await refreshNetwork();
+                    full
+                    disabled={busy}
+                    onClick={() => {
+                      if (member.requestId)
+                        void networkAction(() =>
+                          answerRemoteConnection(member.requestId!, "accepted"),
+                        );
                     }}
                   >
-                    Accepter
+                    Confirmer
                   </Btn>
                   <Btn
+                    full
                     variant="quiet"
-                    onClick={async () => {
-                      if (!member.requestId) return;
-                      await answerRemoteConnection(member.requestId, "rejected");
-                      await refreshNetwork();
+                    disabled={busy}
+                    onClick={() => {
+                      if (member.requestId)
+                        void networkAction(() =>
+                          answerRemoteConnection(member.requestId!, "rejected"),
+                        );
                     }}
                   >
                     Refuser
                   </Btn>
-                </RemoteMemberRow>
-              ))
-            ) : (
-              <Empty titre="Aucune demande" texte="Les nouvelles invitations apparaîtront ici." />
-            )}
-          </div>
-        </Panel>
-
-        <Panel tone="deep">
-          <SectionHeader icon={Shield} title="Suggestions" />
-          <p className="mb-4 text-[13px] leading-relaxed text-umber-soft">
-            Retrouvez les membres disponibles et envoyez une demande de connexion.
-          </p>
-          <div className="space-y-3">
-            {loading ? (
-              <Empty titre="Chargement" texte="Recherche des membres disponibles." />
-            ) : suggestions.length ? (
-              suggestions.slice(0, 12).map((member) => (
-                <RemoteMemberRow
-                  key={member.id}
-                  member={member}
-                  onSelect={() => setSelected(member)}
-                >
-                  {member.status === "pending" ? (
-                    <span className="label-mono text-clay">Demande envoyée</span>
-                  ) : (
-                    <Btn
-                      variant="outline"
-                      onClick={async () => {
-                        await sendRemoteConnection(member.id);
-                        await refreshNetwork();
-                      }}
-                    >
-                      Ajouter
-                    </Btn>
-                  )}
-                </RemoteMemberRow>
-              ))
-            ) : (
-              <Empty titre="Aucune suggestion" texte="Les membres disponibles apparaîtront ici." />
-            )}
-          </div>
-        </Panel>
-      </div>
-
-      <Panel tone="forest" className="mt-5">
-        <Kicker className="text-brass">Connexions actuelles</Kicker>
-        <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
-          {accepted.length ? (
-            accepted.map((member) => (
-              <div
-                key={member.id}
-                className="flex items-center gap-3 rounded-2xl bg-ivory/10 p-2.5 transition-colors hover:bg-ivory/15"
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelected(member)}
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                >
-                  <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={38} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-[13px] font-semibold">
-                      {member.pseudo}
-                    </span>
-                    <span className="label-mono mt-1 block truncate text-ivory/60">
-                      {member.signe}
-                    </span>
-                  </span>
-                </button>
-                <Btn
-                  variant="outline"
-                  className="shrink-0 border-ivory/25 px-3 text-ivory hover:bg-ivory/10"
-                  onClick={() => openConversation(member)}
-                >
-                  Écrire
-                </Btn>
-                {member.requestId && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setNetworkStatus("Retrait de la connexion...");
-                      try {
-                        await removeRemoteConnection(member.requestId!);
-                        await refreshNetwork();
-                        setNetworkStatus("Connexion retirée.");
-                      } catch {
-                        setNetworkStatus("Impossible de retirer cette connexion pour le moment.");
+                </>
+              ) : tab === "connections" ? (
+                <>
+                  <Btn full variant="quiet" onClick={() => openConversation(member)}>
+                    <Send className="size-4" /> Message
+                  </Btn>
+                  {member.requestId && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      aria-label={"Retirer la connexion avec " + member.pseudo}
+                      className="grid size-11 shrink-0 place-items-center rounded-xl text-umber-soft hover:bg-clay/10 hover:text-clay disabled:opacity-50"
+                      onClick={() =>
+                        void networkAction(() => removeRemoteConnection(member.requestId!))
                       }
-                    }}
-                    className="grid size-9 shrink-0 place-items-center rounded-full text-ivory/65 transition-colors hover:bg-ivory/10 hover:text-brass"
-                    aria-label="Retirer cette connexion"
-                  >
-                    <UserMinus className="size-4" />
-                  </button>
-                )}
-              </div>
-            ))
-          ) : (
-            <p className="text-[13px] text-ivory/70">Vos connexions acceptées apparaîtront ici.</p>
+                    >
+                      <UserMinus className="size-4" />
+                    </button>
+                  )}
+                </>
+              ) : member.status === "pending" ? (
+                <span className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-forest/5 text-sm font-medium text-forest">
+                  <Check className="size-4" /> Invitation envoyée
+                </span>
+              ) : (
+                <Btn
+                  full
+                  variant="quiet"
+                  disabled={busy}
+                  onClick={() => void networkAction(() => sendRemoteConnection(member.id))}
+                >
+                  <Users className="size-4" /> Ajouter
+                </Btn>
+              )}
+            </RemoteMemberRow>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-umber/10 bg-card px-5 py-8 text-center">
+          <Users aria-hidden="true" className="mx-auto mb-3 size-8 text-forest/50" />
+          <Empty
+            titre={
+              query
+                ? "Aucun membre trouvé"
+                : tab === "invitations"
+                  ? "Vous êtes à jour"
+                  : tab === "connections"
+                    ? "Votre réseau commence ici"
+                    : "Aucune suggestion pour le moment"
+            }
+            texte={
+              query
+                ? "Essayez un autre nom."
+                : tab === "invitations"
+                  ? "Vos prochaines invitations apparaîtront ici."
+                  : tab === "connections"
+                    ? "Découvrez des membres et ajoutez vos premières connexions."
+                    : "Revenez découvrir les nouveaux membres de la communauté."
+            }
+          />
+          {tab === "connections" && (
+            <Btn className="mt-5" variant="quiet" onClick={() => setTab("suggestions")}>
+              Découvrir les membres
+            </Btn>
           )}
         </div>
-      </Panel>
-
+      )}
       {selected && (
         <ProfilePreview
           member={selected}
@@ -339,10 +369,18 @@ export function ReseauPage() {
 export function MessagesPage() {
   const { currentUserId } = useApp();
   const messageSearch = useRouterState({
-    select: (state) => state.location.search as { conversation?: string; peer?: string },
+    select: (state) =>
+      state.location.search as { conversation?: string | undefined; peer?: string },
   });
   const [active, setActive] = useState("");
-  const [draft, setDraft] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draft = drafts[active] ?? "";
+  const setDraft = (text: string) => setDrafts((previous) => ({ ...previous, [active]: text }));
+  const [query, setQuery] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const lastConversationRef = useRef("");
+  const [sending, setSending] = useState(false);
   const [localMessages, setLocalMessages] = useState<ConversationItem[]>([]);
   const [pendingPeer, setPendingPeer] = useState<NetworkMember | null>(null);
   const [loading, setLoading] = useState(true);
@@ -361,26 +399,42 @@ export function MessagesPage() {
         }
       : null;
   const currentConversation = conversation ?? pendingConversation;
+  const latestVisibleMessageId = currentConversation?.messages.at(-1)?.id;
+  useEffect(() => {
+    if (!currentUserId) return;
+    window.dispatchEvent(
+      new CustomEvent("ifawa:badge-hint", {
+        detail: { messages: localMessages.reduce((sum, item) => sum + item.nonLus, 0) },
+      }),
+    );
+  }, [localMessages, currentUserId]);
 
-  async function refreshMessages() {
+  const refreshMessages = useCallback(async () => {
     try {
       const remote = await loadConversationsFromSupabase();
-      setLocalMessages(remote ?? []);
+      if (actions.isCurrentUser(currentUserId)) setLocalMessages(remote ?? []);
     } catch {
-      setLocalMessages([]);
+      setMessageStatus(
+        "Les messages n’ont pas pu être actualisés. Vos derniers échanges restent affichés.",
+      );
     } finally {
       setLoading(false);
     }
-  }
+  }, [currentUserId]);
+  useRefresh(refreshMessages, 12000);
 
   useEffect(() => {
+    setActive("");
+    setDrafts({});
+    setPendingPeer(null);
+    setLocalMessages([]);
     const cached = readCachedConversations(currentUserId);
     if (cached) {
       setLocalMessages(cached);
       setLoading(false);
     }
     void refreshMessages();
-  }, [currentUserId]);
+  }, [currentUserId, refreshMessages]);
 
   useEffect(() => {
     if (messageSearch.conversation) {
@@ -405,24 +459,13 @@ export function MessagesPage() {
   }, [messageSearch.conversation, messageSearch.peer]);
 
   useEffect(() => {
-    if (!active || active.startsWith("peer:")) return;
-    setLocalMessages((items) => {
-      const next = items.map((item) => (item.id === active ? { ...item, nonLus: 0 } : item));
-      window.dispatchEvent(
-        new CustomEvent("ifawa:badge-hint", {
-          detail: { messages: next.reduce((sum, item) => sum + item.nonLus, 0) },
-        }),
-      );
-      return next;
-    });
-    actions.lireNotificationsConversation(active);
-    markConversationRead(active)
+    if (!active || active.startsWith("peer:") || !latestVisibleMessageId) return;
+    markConversationRead(active, latestVisibleMessageId)
       .then(() => Promise.all([loadConversationsFromSupabase(), loadNotificationsFromSupabase()]))
       .then(([conversations, notifications]) => {
+        if (!actions.isCurrentUser(currentUserId)) return;
         if (conversations) {
-          const nextConversations = conversations.map((item) =>
-            item.id === active ? { ...item, nonLus: 0 } : item,
-          );
+          const nextConversations = conversations;
           setLocalMessages(nextConversations);
           window.dispatchEvent(
             new CustomEvent("ifawa:badge-hint", {
@@ -432,28 +475,98 @@ export function MessagesPage() {
         }
         if (notifications) actions.remplacerNotifications(notifications);
       })
-      .catch(() => {});
-  }, [active]);
+      .catch(() => {
+        if (actions.isCurrentUser(currentUserId))
+          setMessageStatus(
+            "La lecture n’a pas pu être synchronisée. Vérifiez votre connexion ; nous réessaierons à la prochaine ouverture.",
+          );
+      });
+  }, [active, currentUserId, latestVisibleMessageId]);
 
+  const messageCount = currentConversation?.messages.length ?? 0;
   useEffect(() => {
-    if (active || localMessages.length === 0) return;
-    const unreadConversation = localMessages.find((item) => item.nonLus > 0);
-    if (unreadConversation) {
-      setActive(unreadConversation.id);
-    }
-  }, [active, localMessages]);
+    const list = messageListRef.current;
+    if (
+      list &&
+      (lastConversationRef.current !== active ||
+        list.scrollHeight - list.scrollTop - list.clientHeight < 160)
+    )
+      list.scrollTop = list.scrollHeight;
+    lastConversationRef.current = active;
+  }, [active, messageCount]);
+  const shownConversations = localMessages.filter(
+    (item) =>
+      (!unreadOnly || item.nonLus > 0) &&
+      (!query.trim() || matchesSearch(item.pseudo + " " + item.extrait, query)),
+  );
 
   return (
-    <Shell>
-      <PageTitle kicker="Messages">Conversations</PageTitle>
-      <div className="grid min-h-[calc(100vh-10rem)] gap-4 lg:grid-cols-[300px_1fr]">
-        <Panel className={cn("space-y-2", active && "hidden lg:block")}>
+    <Shell wide>
+      <div
+        className={cn("mb-5 flex items-center justify-between gap-3", active && "hidden lg:flex")}
+      >
+        <div>
+          <p className="mb-1 text-xs font-medium text-clay">Gardez le lien</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Messages</h1>
+        </div>
+        <Link
+          to="/reseau"
+          aria-label="Nouvelle conversation"
+          className="grid size-11 place-items-center rounded-full bg-card text-forest ring-1 ring-umber/10 hover:bg-ivory-deep"
+        >
+          <Send className="size-5" />
+        </Link>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.3fr)]">
+        <section
+          aria-label="Vos conversations"
+          className={cn(
+            "min-w-0 rounded-2xl border border-umber/10 bg-card p-3 lg:max-h-[calc(100dvh-13rem)] lg:overflow-y-auto",
+            active && "hidden lg:block",
+          )}
+        >
+          <SearchField
+            value={query}
+            onChange={setQuery}
+            placeholder="Rechercher une conversation…"
+          />
+          <div className="mb-3 flex gap-2" role="group" aria-label="Filtrer les conversations">
+            <button
+              type="button"
+              aria-pressed={!unreadOnly}
+              onClick={() => setUnreadOnly(false)}
+              className={cn(
+                "min-h-10 rounded-full px-3 text-sm font-semibold",
+                !unreadOnly ? "bg-forest/10 text-forest" : "text-umber-soft",
+              )}
+            >
+              Toutes
+            </button>
+            <button
+              type="button"
+              aria-pressed={unreadOnly}
+              onClick={() => setUnreadOnly(true)}
+              className={cn(
+                "min-h-10 rounded-full px-3 text-sm font-semibold",
+                unreadOnly ? "bg-forest/10 text-forest" : "text-umber-soft",
+              )}
+            >
+              Non lues
+            </button>
+          </div>
+          {!active && messageStatus && (
+            <p role="status" className="mb-3 text-sm text-clay">
+              {messageStatus}
+            </p>
+          )}
           {loading ? (
             <Empty titre="Chargement" texte="Ouverture de vos conversations." />
-          ) : localMessages.length ? (
-            localMessages.map((item) => (
+          ) : shownConversations.length ? (
+            shownConversations.map((item) => (
               <button
                 key={item.id}
+                disabled={sending}
+                aria-pressed={active === item.id}
                 onClick={() => {
                   setPendingPeer(null);
                   setMessageStatus("");
@@ -461,40 +574,67 @@ export function MessagesPage() {
                 }}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-colors",
-                  active === item.id ? "bg-umber text-ivory" : "hover:bg-ivory-deep",
+                  active === item.id ? "bg-forest/10 text-forest" : "hover:bg-ivory-deep/60",
                 )}
               >
-                <Monogram name={item.pseudo} imageUrl={item.avatarUrl} size={38} />
+                <Monogram name={item.pseudo} imageUrl={item.avatarUrl} size={48} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-semibold">{item.pseudo}</span>
+                  <span className="block truncate text-[15px] font-semibold">{item.pseudo}</span>
                   <span
                     className={cn(
                       "block truncate text-[12px]",
-                      active === item.id ? "text-ivory/60" : "text-umber-soft",
+                      item.nonLus > 0 ? "font-semibold text-umber" : "text-umber-soft",
                     )}
                   >
                     {item.extrait}
                   </span>
                 </span>
-                {item.nonLus > 0 && (
-                  <span className="grid size-5 place-items-center rounded-full bg-clay font-mono text-[9px] text-ivory">
-                    {item.nonLus}
-                  </span>
-                )}
+                <span className="flex shrink-0 flex-col items-end gap-2">
+                  <span className="text-[10px] text-umber-soft">{item.heure}</span>
+                  {item.nonLus > 0 && (
+                    <span className="grid size-5 place-items-center rounded-full bg-clay font-mono text-[9px] text-ivory">
+                      {item.nonLus}
+                    </span>
+                  )}
+                </span>
               </button>
             ))
           ) : (
-            <Empty titre="Aucune conversation" texte="Écrivez à une connexion depuis le réseau." />
+            <div className="py-8 text-center">
+              <Empty
+                titre={
+                  query
+                    ? "Aucun résultat"
+                    : unreadOnly
+                      ? "Tout est lu"
+                      : "Vos échanges commencent ici"
+                }
+                texte={
+                  query
+                    ? "Essayez un autre nom."
+                    : unreadOnly
+                      ? "Vous n’avez aucune conversation non lue."
+                      : "Retrouvez vos connexions et commencez une conversation."
+                }
+              />
+              <Btn to="/reseau" variant="quiet">
+                Voir mon réseau
+              </Btn>
+            </div>
           )}
-        </Panel>
+        </section>
 
         {currentConversation ? (
-          <Panel tone="deep" className="flex max-h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] flex-col">
-            <div className="mb-4 flex items-center gap-3 border-b border-umber/10 pb-4">
+          <section
+            aria-label={"Conversation avec " + currentConversation.pseudo}
+            className="flex h-[calc(100dvh-14rem)] min-h-72 min-w-0 flex-col overflow-hidden rounded-2xl border border-umber/10 bg-card shadow-sm lg:h-[calc(100dvh-13rem)]"
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b border-umber/10 bg-card p-4">
               <button
                 type="button"
+                disabled={sending}
                 onClick={() => setActive("")}
-                className="grid size-9 shrink-0 place-items-center text-umber-soft lg:hidden"
+                className="grid size-11 shrink-0 place-items-center rounded-full text-umber-soft hover:bg-ivory-deep lg:hidden"
                 aria-label="Retour aux conversations"
               >
                 <ChevronLeft className="size-5" />
@@ -504,20 +644,28 @@ export function MessagesPage() {
                 imageUrl={currentConversation.avatarUrl}
                 size={42}
               />
-              <div>
-                <p className="font-semibold">{currentConversation.pseudo}</p>
-                <p className="label-mono text-umber-soft">Conversation</p>
+              <div className="min-w-0">
+                <h2 className="truncate font-semibold">{currentConversation.pseudo}</h2>
+                <p className="mt-0.5 text-xs text-umber-soft">Conversation privée</p>
               </div>
             </div>
             {messageStatus && <p className="mb-3 text-[13px] text-clay">{messageStatus}</p>}
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+            <div
+              ref={messageListRef}
+              role="log"
+              aria-label="Messages de la conversation"
+              aria-live="polite"
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-ivory/40 p-4"
+            >
               {currentConversation.messages.length ? (
-                currentConversation.messages.map((message, index) => (
+                currentConversation.messages.map((message) => (
                   <div
-                    key={`${message.heure}-${index}`}
+                    key={message.id}
                     className={cn(
-                      "max-w-[78%] rounded-2xl p-3 text-[13px] leading-relaxed",
-                      message.de === "moi" ? "ml-auto bg-forest text-ivory" : "bg-card",
+                      "w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere]",
+                      message.de === "moi"
+                        ? "ml-auto rounded-br-md bg-forest text-ivory"
+                        : "rounded-bl-md bg-ivory-deep text-umber",
                     )}
                   >
                     {message.texte}
@@ -541,85 +689,53 @@ export function MessagesPage() {
             <form
               onSubmit={async (event) => {
                 event.preventDefault();
-                if (!draft.trim()) return;
+                if (!draft.trim() || sending) return;
+                const message = draft.trim();
+                setSending(true);
                 setMessageStatus("");
-                let targetConversationId = currentConversation.id;
-                if (targetConversationId.startsWith("peer:")) {
-                  const peerId = targetConversationId.replace("peer:", "");
-                  try {
-                    const createdId = await findOrCreateConversation(peerId);
-                    if (!createdId) {
-                      setMessageStatus("Conversation indisponible pour le moment.");
-                      return;
-                    }
-                    targetConversationId = createdId;
-                    setActive(createdId);
-                    setPendingPeer(null);
-                  } catch {
-                    setMessageStatus("Impossible de créer cette conversation pour le moment.");
-                    return;
+                try {
+                  let targetId = currentConversation.id;
+                  if (targetId.startsWith("peer:")) {
+                    const createdId = await findOrCreateConversation(targetId.slice(5));
+                    if (!createdId) throw new Error("Conversation indisponible.");
+                    targetId = createdId;
                   }
+                  await sendRemoteMessage(targetId, message);
+                  setDraft("");
+                  setActive(targetId);
+                  setPendingPeer(null);
+                  await refreshMessages();
+                } catch (error) {
+                  setMessageStatus(
+                    error instanceof Error
+                      ? error.message + " Votre texte est conservé."
+                      : "Le message n’a pas pu être envoyé. Votre texte est conservé, réessayez.",
+                  );
+                } finally {
+                  setSending(false);
                 }
-                setLocalMessages((items) =>
-                  items.some((item) => item.id === targetConversationId)
-                    ? items.map((item) =>
-                        item.id === targetConversationId
-                          ? {
-                              ...item,
-                              extrait: draft,
-                              messages: [
-                                ...item.messages,
-                                {
-                                  id: `local-${Date.now()}`,
-                                  de: "moi",
-                                  texte: draft,
-                                  heure: "à l'instant",
-                                },
-                              ],
-                            }
-                          : item,
-                      )
-                    : [
-                        ...items,
-                        {
-                          id: targetConversationId,
-                          pseudo: currentConversation.pseudo,
-                          avatarUrl: currentConversation.avatarUrl,
-                          extrait: draft,
-                          heure: "à l'instant",
-                          nonLus: 0,
-                          messages: [
-                            {
-                              id: `local-${Date.now()}`,
-                              de: "moi",
-                              texte: draft,
-                              heure: "à l'instant",
-                            },
-                          ],
-                        },
-                      ],
-                );
-                void sendRemoteMessage(targetConversationId, draft)
-                  .then(refreshMessages)
-                  .catch(() => {
-                    setMessageStatus("Le message n'a pas pu être envoyé. Réessayez.");
-                    void refreshMessages();
-                  });
-                setDraft("");
               }}
-              className="mt-4 flex shrink-0 gap-2 border-t border-umber/10 bg-ivory-deep pt-3"
+              className="flex shrink-0 items-end gap-2 border-t border-umber/10 bg-card p-3"
             >
-              <input
-                className={cn(inputCls, "rounded-full")}
+              <textarea
+                rows={1}
+                className="min-h-11 max-h-28 min-w-0 flex-1 resize-y rounded-2xl border border-umber/10 bg-ivory-deep/60 px-4 py-3 text-base outline-none focus:border-clay"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                aria-label="Votre message"
+                disabled={sending}
                 placeholder="Écrire un message…"
               />
-              <Btn type="submit" className="shrink-0 rounded-full">
-                <Send className="size-3.5" /> Envoyer
-              </Btn>
+              <button
+                aria-label={sending ? "Envoi en cours" : "Envoyer le message"}
+                type="submit"
+                disabled={sending || !draft.trim()}
+                className="grid size-11 shrink-0 place-items-center rounded-full bg-forest text-ivory transition-colors hover:bg-forest/90 disabled:opacity-40"
+              >
+                <Send aria-hidden="true" className={cn("size-5", sending && "animate-pulse")} />
+              </button>
             </form>
-          </Panel>
+          </section>
         ) : (
           <Panel tone="deep" className="hidden items-center justify-center lg:flex">
             <Empty
@@ -636,6 +752,35 @@ export function MessagesPage() {
 export function ProfilPage() {
   const { profil, posts, currentUserId } = useApp();
   const [tab, setTab] = useState("publications");
+  const [profileLimit, setProfileLimit] = useState(20);
+  const [profileError, setProfileError] = useState("");
+  const [contributions, setContributions] = useState<ContributionItem[]>([]);
+  const [profileNetwork, setProfileNetwork] = useState<NetworkMember[]>([]);
+  useEffect(() => {
+    if (!currentUserId) return;
+    let alive = true;
+    Promise.all([
+      loadFeedFromSupabase({ authorId: currentUserId, limit: profileLimit }),
+      loadMyContributions(),
+      loadNetworkFromSupabase(),
+    ])
+      .then(([feed, contributions, network]) => {
+        if (!alive || !actions.isCurrentUser(currentUserId)) return;
+        if (feed) actions.remplacerPosts(feed.posts, feed.reactions);
+        setContributions(contributions);
+        setProfileNetwork(network?.accepted ?? []);
+        setProfileError("");
+      })
+      .catch(() => {
+        if (alive)
+          setProfileError(
+            "Certaines informations n’ont pas pu être chargées. Réessayez en revenant sur ce profil.",
+          );
+      });
+    return () => {
+      alive = false;
+    };
+  }, [currentUserId, profileLimit]);
   const [connectionCount, setConnectionCount] = useState(
     readCachedNetwork(currentUserId)?.accepted.length ?? 0,
   );
@@ -656,18 +801,23 @@ export function ProfilPage() {
   return (
     <Shell>
       <Panel tone="forest" className="relative mb-5 overflow-hidden p-0">
-        <div className="h-40 bg-[url('/src/assets/cover.jpg')] bg-cover bg-center opacity-90" />
+        <div
+          className="h-40 bg-cover bg-center opacity-90"
+          style={{ backgroundImage: `url(${coverImage})` }}
+        />
         <div className="relative z-10 -mt-10 flex flex-col gap-4 px-5 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex items-end gap-4">
             <div className="relative z-20 rounded-full border-4 border-forest bg-forest">
               <Monogram name={profil.pseudo} imageUrl={profil.avatarUrl} size={82} tone="clay" />
             </div>
             <div>
-              <h1 className="font-display text-[38px] uppercase leading-none">{profil.pseudo}</h1>
+              <h1 className="font-display text-[28px] font-semibold leading-tight tracking-tight">
+                {profil.pseudo}
+              </h1>
               <p className="mt-2 text-[13px] text-ivory/70">
                 {connectionCount} connexions ·{" "}
                 {profil.initie
-                  ? `${profil.signe} · initié en ${profil.annee}`
+                  ? `${profil.signe || "Signe non renseigné"}${profil.annee ? ` · initié en ${profil.annee}` : ""}`
                   : "Espace découverte"}
               </p>
             </div>
@@ -715,13 +865,189 @@ export function ProfilPage() {
           )}
         </>
       )}
-      {tab !== "publications" && (
+      {profileError && (
+        <p role="alert" className="mb-4 text-sm text-clay">
+          {profileError}
+        </p>
+      )}
+      {tab === "publications" && ownPosts.length >= profileLimit && (
+        <Btn variant="outline" onClick={() => setProfileLimit((n) => n + 20)}>
+          Voir plus
+        </Btn>
+      )}
+      {tab === "à propos" && (
         <Panel>
-          <Kicker>{tab}</Kicker>
-          <p className="mt-3 text-[14px] leading-relaxed text-umber-soft">{profil.temoignage}</p>
+          <h2 className="mb-3 text-lg font-semibold">À propos de moi</h2>
+          <p className="whitespace-pre-wrap text-base leading-relaxed">
+            {profil.temoignage || "Vous n’avez pas encore ajouté de présentation."}
+          </p>
+          <Btn to="/parametres" variant="outline" className="mt-4">
+            Compléter mon profil
+          </Btn>
         </Panel>
       )}
+      {tab === "connexions" && (
+        <Panel>
+          <h2 className="mb-4 text-lg font-semibold">Mes connexions</h2>
+          <div className="space-y-3">
+            {profileNetwork.length ? (
+              profileNetwork.map((member) => (
+                <RemoteMemberRow key={member.id} member={member}>
+                  <Link
+                    to="/messages"
+                    search={{ peer: member.id } as never}
+                    className="inline-flex min-h-11 items-center rounded-xl bg-clay px-4 text-sm font-semibold text-ivory"
+                  >
+                    Écrire
+                  </Link>
+                </RemoteMemberRow>
+              ))
+            ) : (
+              <Empty
+                titre="Aucune connexion"
+                texte="Retrouvez la communauté depuis l’onglet Réseau."
+              />
+            )}
+          </div>
+        </Panel>
+      )}
+      {tab === "contributions" && (
+        <div className="space-y-3">
+          {contributions.length ? (
+            contributions.map((item) => (
+              <MyContributionCard
+                key={item.id}
+                item={item}
+                onResubmitted={async () => setContributions(await loadMyContributions())}
+              />
+            ))
+          ) : (
+            <Empty
+              titre="Aucune contribution"
+              texte="Proposez un contenu à la bibliothèque pour commencer."
+            />
+          )}
+          <Btn to="/contribuer" variant="outline">
+            Proposer une contribution
+          </Btn>
+        </div>
+      )}
+      {tab === "parcours" && (
+        <Panel>
+          <h2 className="mb-3 text-lg font-semibold">Mon parcours</h2>
+          <p>{profil.initie ? "Parcours initié" : "Parcours découverte"}</p>
+          <p className="mt-2 text-sm text-umber-soft">
+            {profil.signe || "Signe non renseigné"}
+            {profil.annee ? " · " + profil.annee : ""}
+          </p>
+          <Btn to="/carnet" variant="outline" className="mt-4">
+            Ouvrir mon historique
+          </Btn>
+        </Panel>
+      )}
+      <Panel className="mt-5">
+        <h2 className="mb-4 text-lg font-semibold">Mon espace</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <Btn to="/dossier" variant="quiet">
+            Mes dossiers
+          </Btn>
+          <Btn to="/services" variant="quiet">
+            Services
+          </Btn>
+          <Btn to="/carnet" variant="quiet">
+            Mon historique
+          </Btn>
+          <Btn to="/parametres" variant="quiet">
+            Mes réglages
+          </Btn>
+        </div>
+      </Panel>
     </Shell>
+  );
+}
+
+function MyContributionCard({
+  item,
+  onResubmitted,
+}: {
+  item: ContributionItem;
+  onResubmitted: () => Promise<void>;
+}) {
+  const [body, setBody] = useState(item.body);
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const label =
+    (
+      {
+        submitted: "En attente de relecture",
+        under_review: "En cours d’examen",
+        needs_review: "Correction demandée",
+        approved: "Validée",
+        rejected: "Non retenue",
+        archived: "Archivée",
+      } as Record<string, string>
+    )[item.status] ?? item.status;
+
+  async function submitCorrection() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await resubmitContribution(item.id, body);
+      await onResubmitted();
+      setEditing(false);
+      setMessage("Contribution corrigée et renvoyée à l’équipe.");
+    } catch (reason) {
+      setMessage(
+        reason instanceof Error ? reason.message : "La correction n’a pas pu être envoyée.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel>
+      <p className="text-sm text-clay">
+        {item.categoryLabel} · {label}
+      </p>
+      <h2 className="mt-2 text-lg font-semibold">{item.title}</h2>
+      {item.reviewerNote && (
+        <div className="mt-3 rounded-xl bg-clay/10 p-3 text-sm">
+          <p className="font-medium">Note de l’équipe IFAWA</p>
+          <p className="mt-1 text-umber-soft">{item.reviewerNote}</p>
+        </div>
+      )}
+      {editing ? (
+        <div className="mt-3">
+          <textarea
+            className={cn(inputCls, "min-h-36")}
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+          />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Btn type="button" disabled={busy} onClick={() => void submitCorrection()}>
+              {busy ? "Envoi…" : "Renvoyer à validation"}
+            </Btn>
+            <Btn type="button" variant="quiet" disabled={busy} onClick={() => setEditing(false)}>
+              Annuler
+            </Btn>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 whitespace-pre-wrap leading-relaxed">{item.body}</p>
+      )}
+      {item.status === "needs_review" && !editing && (
+        <Btn type="button" variant="outline" className="mt-4" onClick={() => setEditing(true)}>
+          Corriger la contribution
+        </Btn>
+      )}
+      {message && (
+        <p role="status" className="mt-3 text-sm text-clay">
+          {message}
+        </p>
+      )}
+    </Panel>
   );
 }
 
@@ -756,7 +1082,7 @@ export function ServicesPage() {
             <Kicker className={index === 0 ? "text-brass" : undefined}>
               Service {String(index + 1).padStart(2, "0")}
             </Kicker>
-            <h2 className="mt-3 font-display text-[28px] uppercase leading-none">
+            <h2 className="mt-3 font-display text-[28px] font-semibold leading-tight tracking-tight">
               {service.titre}
             </h2>
             <p
@@ -778,24 +1104,32 @@ export function ServicesPage() {
 }
 
 export function ServiceDetailPage({ slug }: { slug: string }) {
-  const copy = serviceCopy[slug] ?? serviceCopy.consultation;
+  const copy = serviceCopy[slug];
   const formules =
-    slug === "etude"
-      ? formulesEtude
-      : slug === "accompagnement"
-        ? formulesAccompagnement
-        : formulesConsultation;
+    slug === "initiation"
+      ? []
+      : slug === "etude"
+        ? formulesEtude
+        : slug === "accompagnement"
+          ? formulesAccompagnement
+          : formulesConsultation;
   const [selectedFormula, setSelectedFormula] = useState(formules[0]?.nom ?? "");
   const [subject, setSubject] = useState("");
   const [deadline, setDeadline] = useState("");
   const [details, setDetails] = useState("");
+  const [audio, setAudio] = useState<File | null>(null);
+  const [recording, setRecording] = useState(false);
   const [status, setStatus] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const defaultFormula = formules[0]?.nom ?? "";
+  useEffect(() => setSelectedFormula(defaultFormula), [defaultFormula]);
+
   async function submitRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!subject.trim()) {
-      setStatus("Indiquez l'objet de votre demande.");
+    if (recording || submitting) return;
+    if (!subject.trim() && !audio) {
+      setStatus("Écrivez votre préoccupation ou ajoutez un audio.");
       return;
     }
     setSubmitting(true);
@@ -807,10 +1141,12 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
         subject: subject.trim(),
         deadline: deadline.trim(),
         details: details.trim(),
+        audio,
       });
       setSubject("");
       setDeadline("");
       setDetails("");
+      setAudio(null);
       setStatus(`Demande enregistrée. Référence ${reference.slice(0, 8).toUpperCase()}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "La demande n'a pas pu être enregistrée.");
@@ -819,6 +1155,13 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
     }
   }
 
+  if (!copy)
+    return (
+      <Shell>
+        <Empty titre="Service introuvable" texte="Choisissez un service dans le catalogue." />
+        <Btn to="/services">Voir les services</Btn>
+      </Shell>
+    );
   return (
     <Shell>
       <PageTitle
@@ -831,33 +1174,39 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
       >
         {copy.title}
       </PageTitle>
+      <p className="mb-5 text-base leading-relaxed text-umber-soft">{copy.intro}</p>
+      <p className="mb-4 text-sm text-umber-soft">
+        {slug === "initiation"
+          ? "Décrivez votre situation et votre disponibilité. Les modalités seront précisées après étude de votre demande."
+          : "Tarifs indicatifs en FCFA (XOF), à confirmer avec l’équipe. Aucun paiement n’est effectué lors de cette demande."}
+      </p>
       <div className="grid gap-4 md:grid-cols-3">
         {formules.map((formule) => (
           <button
             key={formule.nom}
             type="button"
+            aria-pressed={selectedFormula === formule.nom}
             onClick={() => setSelectedFormula(formule.nom)}
             className="text-left"
           >
             <Panel
-              tone={selectedFormula === formule.nom || formule.recommande ? "forest" : "paper"}
+              tone="paper"
               className={cn(
                 "h-full transition-transform hover:-translate-y-0.5",
                 selectedFormula === formule.nom && "ring-2 ring-clay/40",
               )}
             >
-              <Kicker className={formule.recommande ? "text-brass" : undefined}>
-                {formule.recommande ? "Recommandé" : "Formule"}
+              <Kicker className="text-clay">
+                {selectedFormula === formule.nom
+                  ? "✓ Sélectionnée"
+                  : formule.recommande
+                    ? "Recommandée"
+                    : "Formule"}
               </Kicker>
-              <h2 className="mt-3 font-display text-[25px] uppercase leading-none">
+              <h2 className="mt-3 font-display text-[25px] font-semibold leading-tight tracking-tight">
                 {formule.nom}
               </h2>
-              <p
-                className={cn(
-                  "mt-3 text-[13px]",
-                  formule.recommande ? "text-ivory/75" : "text-umber-soft",
-                )}
-              >
+              <p className={cn("mt-3 text-[13px]", "text-umber-soft")}>
                 {"delai" in formule ? formule.delai : formule.suivi}
               </p>
               <p className="mt-4 font-semibold">{formule.prix}</p>
@@ -895,7 +1244,13 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
             </Field>
           </div>
           <div className="sm:col-span-2">
-            <Btn type="submit" className="mt-1" disabled={submitting}>
+            <AudioRecorder
+              file={audio}
+              onChange={setAudio}
+              onRecordingChange={setRecording}
+              disabled={submitting}
+            />
+            <Btn type="submit" className="mt-4" disabled={submitting || recording}>
               {submitting ? "Envoi..." : "Envoyer la demande"}
             </Btn>
             {status && <p className="mt-3 text-[13px] text-umber-soft">{status}</p>}
@@ -907,76 +1262,80 @@ export function ServiceDetailPage({ slug }: { slug: string }) {
 }
 
 export function SigneDetailPage({ slug }: { slug: string }) {
-  const signe = signes.find((item) => item.slug === slug) ?? signes[0];
+  const documents = useFaCorpus();
+  const signe = documents.find((item) => item.slug === slug);
+  if (signe) return <SignDossier key={slug} signe={signe} />;
+  const catalogSign = faSignCatalog.find((item) => item.slug === slug);
+  if (catalogSign) return <BasicSignPage key={slug} sign={catalogSign} />;
   return (
     <Shell>
-      <PageTitle
-        kicker={signe.numero}
-        action={
-          <Btn to="/fa" variant="ghost">
-            Retour
-          </Btn>
-        }
-      >
-        {signe.nom}
-      </PageTitle>
-      <Panel tone="forest" className="mb-5">
-        <p className="font-display text-[28px] uppercase leading-none">{signe.soustitre}</p>
-        <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-ivory/75">
-          {signe.presentation}
-        </p>
-      </Panel>
-      <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
-        <Panel>
-          <Kicker>Signification</Kicker>
-          <p className="mt-3 text-[14px] leading-relaxed text-umber-soft">{signe.signification}</p>
-          <ListBlock title="Enseignements" items={signe.enseignements} />
-          <ListBlock title="Interdits rapportés" items={signe.interdits} />
-          <ListBlock title="Recommandations" items={signe.recommandations} />
-        </Panel>
-        <div className="space-y-4">
-          <Panel tone="deep">
-            <Kicker>Correspondances</Kicker>
-            <div className="mt-3 space-y-2">
-              {signe.correspondances.map((item) => (
-                <div
-                  key={item.cle}
-                  className="flex justify-between border-b border-umber/10 py-2 text-[13px]"
-                >
-                  <span className="text-umber-soft">{item.cle}</span>
-                  <strong>{item.valeur}</strong>
-                </div>
-              ))}
-            </div>
-          </Panel>
-          <Panel>
-            <Kicker>Variantes</Kicker>
-            <ul className="mt-3 space-y-2 text-[13px] leading-relaxed text-umber-soft">
-              {signe.variantes.map((item) => (
-                <li key={item}>• {item}</li>
-              ))}
-            </ul>
-          </Panel>
-        </div>
-      </div>
+      <Empty
+        titre="Signe introuvable"
+        texte="Retrouvez les signes disponibles dans la bibliothèque."
+      />
+      <Btn to="/fa">Bibliothèque</Btn>
     </Shell>
   );
 }
-
 export function RecherchePage() {
+  const documents = useFaCorpus();
   const [q, setQ] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [catalog, setCatalog] = useState<ServiceCard[]>(mockServices);
+  const [postResults, setPostResults] = useState<import("@/data/mock").Post[]>([]);
+  const [searchError, setSearchError] = useState("");
+  useEffect(() => {
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      if (!q.trim()) {
+        setPostResults([]);
+        return;
+      }
+      loadFeedFromSupabase({ query: q.trim(), limit: 30 })
+        .then((result) => {
+          if (alive) {
+            setPostResults((result?.posts ?? []).filter((post) => matchesSearch(post.contenu, q)));
+            setSearchError("");
+          }
+        })
+        .catch(() => {
+          if (alive) setSearchError("Les publications n’ont pas pu être recherchées.");
+        })
+        .finally(() => {
+          if (alive) setSearching(false);
+        });
+    }, 350);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [q]);
   const [network, setNetwork] = useState<Awaited<
     ReturnType<typeof loadNetworkFromSupabase>
   > | null>(null);
 
   useEffect(() => {
+    let alive = true;
+    fetchServiceCatalog()
+      .then((items) => {
+        if (alive) setCatalog(items);
+      })
+      .catch(() => {});
     loadNetworkFromSupabase()
-      .then((items) => setNetwork(items))
-      .catch(() => setNetwork(null));
+      .then((items) => {
+        if (alive) setNetwork(items);
+      })
+      .catch(() => {
+        if (alive) setNetwork(null);
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const results = useMemo(() => {
-    const query = q.toLowerCase();
+    const query = q.trim();
+    if (!query) return [];
     const remoteMembers = network
       ? [...network.accepted, ...network.received, ...network.sent, ...network.suggestions].map(
           (member) => ({
@@ -987,31 +1346,54 @@ export function RecherchePage() {
         )
       : [];
     return [
-      ...signes.map((s) => ({ title: s.nom, text: s.soustitre, to: `/fa/${s.slug}` })),
+      ...documents.map((s) => ({
+        title: s.nom,
+        text: s.type === "messager" ? "Le messager" : `Signe ${s.ordre ?? ""}`,
+        to: `/fa/${s.slug}`,
+      })),
       ...remoteMembers,
-      ...mockServices.map((s) => ({
+      ...catalog.map((s) => ({
         title: s.titre,
         text: s.description,
         to: `/services/${s.slug}`,
       })),
-    ].filter((item) => `${item.title} ${item.text}`.toLowerCase().includes(query));
-  }, [network, q]);
+    ].filter((item) => matchesSearch(`${item.title} ${item.text}`, query));
+  }, [network, q, catalog, documents]);
   return (
     <Shell>
       <PageTitle kicker="Recherche">Trouver rapidement</PageTitle>
-      <Panel tone="deep" className="mb-5">
-        <div className="flex items-center gap-2">
-          <Search className="size-4 text-umber-soft" />
-          <input
-            className="w-full bg-transparent text-[15px] outline-none"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Signe, membre, service…"
+      <SearchField
+        value={q}
+        onChange={(value) => {
+          setQ(value);
+          setPostResults([]);
+          setSearchError("");
+          setSearching(Boolean(value.trim()));
+        }}
+        placeholder="Signe, membre, service, publication…"
+      />
+      {q.trim() && searching && (
+        <p role="status" className="mb-3 text-xs text-umber-soft">
+          Recherche des publications…
+        </p>
+      )}
+      {q.trim() && searchError && (
+        <p role="alert" className="mb-3 text-sm text-clay">
+          {searchError}
+        </p>
+      )}
+      {q.trim() &&
+        !searching &&
+        !searchError &&
+        results.length === 0 &&
+        postResults.length === 0 && (
+          <Empty
+            titre="Aucun résultat"
+            texte="Essayez un autre mot ou une orthographe différente."
           />
-        </div>
-      </Panel>
+        )}
       <div className="space-y-3">
-        {(q.trim() ? results : results.slice(0, 8)).map((item) => (
+        {(q.trim() ? results : []).map((item) => (
           <Link
             key={`${item.to}-${item.title}`}
             to={item.to as never}
@@ -1020,6 +1402,9 @@ export function RecherchePage() {
             <p className="font-semibold">{item.title}</p>
             <p className="mt-1 text-[13px] text-umber-soft">{item.text}</p>
           </Link>
+        ))}
+        {(q.trim() ? postResults : []).map((post) => (
+          <PostCard key={post.id} post={post} />
         ))}
       </div>
     </Shell>
@@ -1066,12 +1451,17 @@ export function ContribuerPage() {
       <Panel>
         <form onSubmit={submitContribution} className="grid gap-4 sm:grid-cols-2">
           <Field label="Signe concerné">
-            <input
+            <select
+              required
               className={inputCls}
-              placeholder="Ex. Gbé Mêdji"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-            />
+            >
+              <option value="">Choisir un signe</option>
+              {signes.map((s) => (
+                <option key={s.slug}>{s.nom}</option>
+              ))}
+            </select>
           </Field>
           <Field label="Catégorie">
             <input
@@ -1103,78 +1493,6 @@ export function ContribuerPage() {
   );
 }
 
-export function DossierPage() {
-  const { profil, currentUserId } = useApp();
-  const [requests, setRequests] = useState<ServiceRequest[]>(() =>
-    readCachedServiceRequests(currentUserId),
-  );
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const cached = readCachedServiceRequests(currentUserId);
-    if (cached.length) {
-      setRequests(cached);
-      setLoading(false);
-    }
-    let active = true;
-    loadMyServiceRequests()
-      .then((items) => {
-        if (active) setRequests(items);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [currentUserId]);
-
-  return (
-    <Shell>
-      <PageTitle kicker="Dossier Fa personnel">Votre espace privé</PageTitle>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {[
-          ["Signe Fa", profil.signe],
-          ["Demandes", loading ? "Chargement..." : `${requests.length} dossier(s)`],
-          [
-            "Dernière demande",
-            requests[0]
-              ? `${serviceRequestLabels[requests[0].serviceType] ?? requests[0].serviceType} · ${
-                  serviceStatusLabels[requests[0].status] ?? requests[0].status
-                }`
-              : "Aucune demande enregistrée",
-          ],
-          ["Documents", "Les pièces liées aux dossiers apparaîtront ici."],
-        ].map(([item, value]) => (
-          <Panel key={item}>
-            <Kicker>{item}</Kicker>
-            <p className="mt-3 text-[14px] text-umber-soft">{value}</p>
-          </Panel>
-        ))}
-      </div>
-      <div className="mt-5 space-y-3">
-        {requests.map((request) => (
-          <Panel key={request.id}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <Kicker>{formatShortDate(request.createdAt)}</Kicker>
-                <h2 className="mt-2 font-display text-[22px] uppercase leading-none">
-                  {request.subject}
-                </h2>
-                <p className="mt-2 text-[13px] text-umber-soft">
-                  {serviceRequestLabels[request.serviceType] ?? request.serviceType}
-                  {request.formulaName ? ` · ${request.formulaName}` : ""}
-                </p>
-              </div>
-              <Chip>{serviceStatusLabels[request.status] ?? request.status}</Chip>
-            </div>
-          </Panel>
-        ))}
-      </div>
-    </Shell>
-  );
-}
-
 export function CarnetPage() {
   const { currentUserId } = useApp();
   const [requests, setRequests] = useState<ServiceRequest[]>(() =>
@@ -1183,6 +1501,7 @@ export function CarnetPage() {
   const [contributions, setContributions] = useState<ContributionItem[]>(() =>
     readCachedContributions(currentUserId),
   );
+  const [historyError, setHistoryError] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -1200,6 +1519,10 @@ export function CarnetPage() {
         setRequests(nextRequests);
         setContributions(nextContributions);
       })
+      .catch(() => {
+        if (active)
+          setHistoryError("Votre historique n’a pas pu être actualisé. Réessayez plus tard.");
+      })
       .finally(() => {
         if (active) setLoading(false);
       });
@@ -1211,6 +1534,7 @@ export function CarnetPage() {
   const entries = [
     ...requests.map((item) => ({
       id: `service-${item.id}`,
+      timestamp: item.createdAt,
       date: formatShortDate(item.createdAt),
       titre: item.subject,
       texte: `${serviceRequestLabels[item.serviceType] ?? item.serviceType} · ${
@@ -1219,20 +1543,28 @@ export function CarnetPage() {
     })),
     ...contributions.map((item) => ({
       id: `contribution-${item.id}`,
+      timestamp: item.createdAt,
       date: formatShortDate(item.createdAt),
       titre: item.title,
-      texte: `${item.categoryLabel} · ${item.status}`,
+      texte: `${item.categoryLabel} · ${({ submitted: "En relecture", approved: "Validée", rejected: "Non retenue" } as Record<string, string>)[item.status] ?? item.status}`,
     })),
-  ];
+  ].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
 
   return (
     <Shell>
       <PageTitle kicker="Carnet de parcours">Historique personnel</PageTitle>
+      {historyError && (
+        <p role="alert" className="mb-4 text-clay">
+          {historyError}
+        </p>
+      )}
       <div className="space-y-4">
         {entries.map((item) => (
           <Panel key={item.id}>
             <Kicker>{item.date}</Kicker>
-            <h2 className="mt-2 font-display text-[23px] uppercase leading-none">{item.titre}</h2>
+            <h2 className="mt-2 font-display text-[23px] font-semibold leading-tight tracking-tight">
+              {item.titre}
+            </h2>
             <p className="mt-2 text-[13px] leading-relaxed text-umber-soft">{item.texte}</p>
           </Panel>
         ))}
@@ -1252,7 +1584,8 @@ export function CarnetPage() {
 }
 
 export function NotificationsPage() {
-  const { notifications, currentUserId } = useApp();
+  const { notifications: allNotifications, currentUserId } = useApp();
+  const notifications = allNotifications.filter((item) => item.type !== "message");
   const [filter, setFilter] = useState<"all" | "unread">("all");
 
   useEffect(() => {
@@ -1260,7 +1593,7 @@ export function NotificationsPage() {
     if (cached) actions.remplacerNotifications(cached);
     loadNotificationsFromSupabase()
       .then((items) => {
-        if (items) actions.remplacerNotifications(items);
+        if (items && actions.isCurrentUser(currentUserId)) actions.remplacerNotifications(items);
       })
       .catch(() => {});
   }, [currentUserId]);
@@ -1304,12 +1637,11 @@ export function NotificationsPage() {
         {shown.map((notification) => (
           <Link
             key={notification.id}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            to={destination[notification.type] as any}
+            to={destination[notification.type]}
             search={
               notification.type === "message" && notification.conversationId
-                ? ({ conversation: notification.conversationId } as never)
-                : undefined
+                ? { conversation: notification.conversationId }
+                : {}
             }
             onClick={() => actions.lireNotification(notification.id)}
             className="block"
@@ -1348,268 +1680,14 @@ export function NotificationsPage() {
   );
 }
 
-export function ParametresPage() {
-  const { profil } = useApp();
-  const [pseudo, setPseudo] = useState(profil.pseudo);
-  const [relation, setRelation] = useState(profil.miseEnRelation);
-  const [avatarUrl, setAvatarUrl] = useState(profil.avatarUrl ?? "");
-  const [status, setStatus] = useState("");
-
-  useEffect(() => {
-    setPseudo(profil.pseudo);
-    setRelation(profil.miseEnRelation);
-    setAvatarUrl(profil.avatarUrl ?? "");
-  }, [profil.avatarUrl, profil.miseEnRelation, profil.pseudo]);
-
-  async function chooseProfileImage(file: File | undefined) {
-    if (!file) return;
-    setStatus("Enregistrement de la photo...");
-    try {
-      const nextAvatar = await uploadProfileAvatar(file);
-      setAvatarUrl(nextAvatar);
-      actions.majProfil({ avatarUrl: nextAvatar });
-      await updateProfileSettings({ pseudo, miseEnRelation: relation, avatarUrl: nextAvatar });
-      const savedProfile = await loadCurrentProfile();
-      if (savedProfile) actions.majProfil(savedProfile);
-      setStatus("Photo de profil enregistrée.");
-    } catch {
-      setStatus("La photo n'a pas pu être enregistrée. Réessayez dans quelques instants.");
-    }
-  }
-
-  async function save() {
-    setStatus("");
-    const patch = { pseudo, miseEnRelation: relation, avatarUrl };
-    actions.majProfil(patch);
-    try {
-      await updateProfileSettings({ pseudo, miseEnRelation: relation, avatarUrl });
-      const savedProfile = await loadCurrentProfile();
-      if (savedProfile) actions.majProfil(savedProfile);
-      setStatus("Profil enregistré.");
-    } catch {
-      setStatus(
-        "Profil enregistré sur cet appareil. La sauvegarde distante sera réessayée plus tard.",
-      );
-    }
-  }
-
-  return (
-    <Shell>
-      <PageTitle kicker="Confidentialité">Réglages du profil</PageTitle>
-      <Panel>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Pseudonyme">
-            <input
-              className={inputCls}
-              value={pseudo}
-              onChange={(e) => setPseudo(e.target.value)}
-            />
-          </Field>
-          <Field label="Visibilité du signe">
-            <select className={inputCls}>
-              <option>Membres du même signe</option>
-              <option>Connexions uniquement</option>
-              <option>Moi uniquement</option>
-            </select>
-          </Field>
-          <Field label="Photo de profil">
-            <div className="flex items-center gap-3">
-              <Monogram name={pseudo} imageUrl={avatarUrl} size={54} />
-              <input
-                className={inputCls}
-                type="file"
-                accept="image/*"
-                onChange={(e) => void chooseProfileImage(e.target.files?.[0])}
-              />
-            </div>
-          </Field>
-          <Field label="Photo de couverture">
-            <div className="aspect-[5/2] w-full rounded-2xl bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
-            <p className="mt-2 text-[12px] text-umber-soft">
-              La couverture Ifawa est commune à tous les profils.
-            </p>
-          </Field>
-        </div>
-        <button
-          onClick={() => setRelation((value) => !value)}
-          className="mt-5 flex w-full items-center justify-between rounded-2xl bg-ivory-deep p-4 text-left"
-        >
-          <span>
-            <strong>Mise en relation</strong>
-            <span className="mt-1 block text-[13px] text-umber-soft">
-              Recevoir des demandes de connexion.
-            </span>
-          </span>
-          <span className={cn("label-mono", relation ? "text-clay" : "text-umber-soft")}>
-            {relation ? "Activée" : "Désactivée"}
-          </span>
-        </button>
-        <Btn className="mt-4" onClick={save}>
-          Enregistrer
-        </Btn>
-        {status && <p className="mt-3 text-[13px] text-umber-soft">{status}</p>}
-      </Panel>
-    </Shell>
-  );
-}
-
-export function SuiviPage() {
-  const { currentUserId } = useApp();
-  const [requests, setRequests] = useState<ServiceRequest[]>(() =>
-    readCachedServiceRequests(currentUserId),
-  );
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const cached = readCachedServiceRequests(currentUserId);
-    if (cached.length) {
-      setRequests(cached);
-      setLoading(false);
-    }
-    let active = true;
-    loadMyServiceRequests()
-      .then((items) => {
-        if (active) setRequests(items);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [currentUserId]);
-
-  const current = requests[0];
-
-  return (
-    <Shell>
-      <PageTitle kicker="Suivi">Consultation en cours</PageTitle>
-      {current ? (
-        <>
-          <Panel tone="forest" className="mb-5">
-            <p className="font-display text-[28px] uppercase leading-none">
-              {current.id.slice(0, 8).toUpperCase()}
-            </p>
-            <p className="mt-2 text-[13px] text-ivory/70">
-              {serviceRequestLabels[current.serviceType] ?? current.serviceType} ·{" "}
-              {serviceStatusLabels[current.status] ?? current.status}
-            </p>
-          </Panel>
-          <div className="space-y-3">
-            {[
-              ["Demande reçue", formatShortDate(current.createdAt), true],
-              [
-                "Analyse du dossier",
-                "Après lecture par l'équipe Ifawa",
-                current.status !== "submitted",
-              ],
-              [
-                "Réponse transmise",
-                "Lorsque le traitement est terminé",
-                current.status === "completed",
-              ],
-            ].map(([step, date, done], index) => (
-              <Panel key={String(step)} tone={index === 0 ? "deep" : "paper"}>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={cn(
-                      "grid size-8 place-items-center rounded-full",
-                      done ? "bg-clay text-ivory" : "bg-ivory-deep text-umber-soft",
-                    )}
-                  >
-                    {done ? <Check className="size-4" /> : "•"}
-                  </span>
-                  <div>
-                    <p className="font-semibold">{step}</p>
-                    <p className="label-mono text-umber-soft">{date}</p>
-                  </div>
-                </div>
-              </Panel>
-            ))}
-          </div>
-        </>
-      ) : (
-        <Empty
-          titre={loading ? "Chargement du suivi" : "Aucune demande en cours"}
-          texte={
-            loading
-              ? "Vos dossiers sont en cours de récupération."
-              : "Envoyez une demande depuis les services pour ouvrir un suivi."
-          }
-        />
-      )}
-    </Shell>
-  );
-}
-
-export function AccompagnementPage() {
-  return (
-    <Shell>
-      <PageTitle kicker="Mon accompagnement">Suivi personnel</PageTitle>
-      <Panel tone="forest" className="mb-5">
-        <p className="font-display text-[30px] uppercase leading-none">Formule 6 mois</p>
-        <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-ivory/75">
-          Suivi actif, questions incluses et compte rendu mensuel.
-        </p>
-      </Panel>
-      <div className="grid gap-4 sm:grid-cols-3">
-        {["15 questions incluses", "2 comptes rendus mensuels", "1 étude de signe offerte"].map(
-          (item) => (
-            <Panel key={item}>
-              <Kicker>Inclus</Kicker>
-              <p className="mt-2 font-semibold">{item}</p>
-            </Panel>
-          ),
-        )}
-      </div>
-    </Shell>
-  );
-}
-
 export function AdminPage() {
   return (
     <Shell>
-      <PageTitle kicker="Administration">Pilotage interne</PageTitle>
-      <div className="grid gap-4 md:grid-cols-3">
-        <Stat title="Consultations" value={String(consultationsAdmin.length)} />
-        <Stat title="Contributions" value={String(contributionsAdmin.length)} />
-        <Stat title="Partenaires" value={String(partenaires.length)} />
-      </div>
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <AdminList
-          title="Consultations en cours"
-          rows={consultationsAdmin.map((item) => `${item.ref} · ${item.user} · ${item.statut}`)}
-        />
-        <AdminList
-          title="Contributions en attente"
-          rows={contributionsAdmin.map((item) => `${item.id} · ${item.membre} · ${item.statut}`)}
-        />
-      </div>
-    </Shell>
-  );
-}
-
-export function RapportPage() {
-  return (
-    <Shell>
-      <PageTitle kicker="Rapport multi-praticiens">Synthèse comparative</PageTitle>
-      <div className="grid gap-4 lg:grid-cols-[0.9fr_1fr]">
-        <div className="space-y-4">
-          {avisPraticiens.map((avis) => (
-            <Panel key={avis.ref}>
-              <Kicker>{avis.ref}</Kicker>
-              <h2 className="mt-2 font-semibold">{avis.titre}</h2>
-              <p className="mt-2 text-[13px] leading-relaxed text-umber-soft">{avis.texte}</p>
-            </Panel>
-          ))}
-        </div>
-        <Panel tone="deep">
-          <SectionHeader icon={BookOpen} title="Synthèse" />
-          {syntheseRapport.map((bloc) => (
-            <ListBlock key={bloc.titre} title={bloc.titre} items={bloc.items} />
-          ))}
-        </Panel>
-      </div>
+      <PageTitle kicker="Gestion">Administration</PageTitle>
+      <Empty
+        titre="Espace de gestion réservé"
+        texte="Les outils de modération et de traitement des dossiers seront disponibles après l’activation des accès de l’équipe."
+      />
     </Shell>
   );
 }
@@ -1618,7 +1696,9 @@ function SectionHeader({ icon: Icon, title }: { icon: typeof Users; title: strin
   return (
     <div className="mb-4 flex items-center gap-2">
       <Icon className="size-4 text-clay" />
-      <h2 className="font-display text-[22px] uppercase leading-none">{title}</h2>
+      <h2 className="font-display text-[22px] font-semibold leading-tight tracking-tight">
+        {title}
+      </h2>
     </div>
   );
 }
@@ -1632,7 +1712,7 @@ function MemberRow({
   name: string;
   meta: string;
   children: ReactNode;
-  active?: boolean;
+  active?: boolean | undefined;
 }) {
   return (
     <div
@@ -1665,22 +1745,20 @@ function RemoteMemberRow({
   onSelect?: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-3 rounded-2xl bg-ivory-deep/45 p-3 sm:flex-row sm:flex-wrap sm:items-center">
+    <article className="flex min-w-0 flex-col rounded-2xl border border-umber/10 bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
       <button
         type="button"
         onClick={onSelect}
-        className="flex min-w-0 items-center gap-3 text-left"
+        className="flex min-w-0 items-center gap-3 rounded-xl text-left focus-visible:outline-2 focus-visible:outline-clay"
       >
-        <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={38} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[14px] font-semibold">{member.pseudo}</p>
-          <p className="label-mono mt-1 whitespace-normal leading-relaxed text-umber-soft">
-            {member.signe}
-          </p>
-        </div>
+        <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={60} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-semibold">{member.pseudo}</span>
+          <span className="mt-1 block text-xs leading-relaxed text-umber-soft">{member.signe}</span>
+        </span>
       </button>
-      <div className="flex flex-wrap gap-2 sm:ml-auto">{children}</div>
-    </div>
+      <div className="mt-4 flex items-center gap-2 [&>button]:text-sm">{children}</div>
+    </article>
   );
 }
 
@@ -1696,20 +1774,25 @@ function ProfilePreview({
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-umber/35 p-4 pt-16 backdrop-blur-sm sm:items-center sm:p-6">
       <div className="w-full max-w-lg animate-rise bg-card text-umber shadow-2xl carved">
-        <div className="h-32 rounded-t-[inherit] bg-[url('/src/assets/cover.jpg')] bg-cover bg-center" />
+        <div
+          className="h-32 rounded-t-[inherit] bg-cover bg-center"
+          style={{ backgroundImage: `url(${coverImage})` }}
+        />
         <div className="-mt-10 px-5 pb-5">
           <div className="relative z-10 inline-flex rounded-full border-4 border-card bg-card">
             <Monogram name={member.pseudo} imageUrl={member.avatarUrl} size={76} tone="clay" />
           </div>
           <div className="mt-4 flex items-start justify-between gap-4">
             <div>
-              <h2 className="font-display text-[34px] uppercase leading-none">{member.pseudo}</h2>
+              <h2 className="font-display text-[28px] font-semibold leading-tight tracking-tight">
+                {member.pseudo}
+              </h2>
               <p className="label-mono mt-2 text-umber-soft">{member.signe}</p>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="font-mono text-[10px] uppercase tracking-[0.16em] text-umber-soft hover:text-clay"
+              className="font-medium text-[13px] text-umber-soft hover:text-clay"
             >
               Fermer
             </button>
@@ -1732,24 +1815,13 @@ function ProfilePreview({
   );
 }
 
-function ListBlock({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="mt-5">
-      <Kicker>{title}</Kicker>
-      <ul className="mt-3 space-y-2 text-[13px] leading-relaxed text-umber-soft">
-        {items.map((item) => (
-          <li key={item}>• {item}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 function Stat({ title, value }: { title: string; value: string }) {
   return (
     <Panel tone="deep">
       <Kicker>{title}</Kicker>
-      <p className="mt-3 font-display text-[38px] uppercase leading-none">{value}</p>
+      <p className="mt-3 font-display text-[28px] font-semibold leading-tight tracking-tight">
+        {value}
+      </p>
     </Panel>
   );
 }

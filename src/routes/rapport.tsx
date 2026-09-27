@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { RapportPage } from "@/components/ifawa/PrototypePages";
-
+import { RequestsPage } from "@/components/ifawa/RequestsPage";
 export const Route = createFileRoute("/rapport")({
-  component: RapportPage,
+  component: () => <RequestsPage mode="report" />,
 });

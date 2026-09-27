@@ -1,12 +1,14 @@
 import { useSyncExternalStore } from "react";
 import { type Post, type Notification } from "@/data/mock";
+import { persistReceipt } from "./read-receipts";
 
 export type ReactionKind = "like" | "love" | "laugh" | "support";
 
 export type Profil = {
   pseudo: string;
-  avatarUrl?: string;
-  coverUrl?: string;
+  avatarUrl?: string | undefined;
+  coverUrl?: string | undefined;
+  signVisibility: "private" | "same_sign" | "connections";
   initie: boolean;
   signe: string;
   annee: string;
@@ -17,8 +19,9 @@ export type Profil = {
 };
 
 export type AppState = {
+  profileReady: boolean;
   onboarded: boolean;
-  currentUserId?: string;
+  currentUserId?: string | undefined;
   profil: Profil;
   posts: Post[];
   reactions: Record<string, ReactionKind>;
@@ -27,19 +30,22 @@ export type AppState = {
   connexions: string[];
   demandes: { id: string; etat: "attente" | "acceptee" | "refusee" }[];
   demandesEnvoyees: string[];
+  savedPostIds: string[];
+  hiddenPostIds: string[];
 };
 
 const initial: AppState = {
+  profileReady: false,
   onboarded: false,
   profil: {
     pseudo: "@Vous",
-    initie: true,
-    signe: "Gbé Mêdji",
-    annee: "2018",
-    satisfaction: "Satisfait",
-    temoignage:
-      "Depuis mon initiation, j'avance avec plus de clarté. J'aime échanger avec les membres du même signe.",
-    miseEnRelation: true,
+    initie: false,
+    signe: "",
+    annee: "",
+    satisfaction: "",
+    temoignage: "",
+    signVisibility: "private",
+    miseEnRelation: false,
     interets: [],
   },
   posts: [],
@@ -49,16 +55,19 @@ const initial: AppState = {
   connexions: [],
   demandes: [],
   demandesEnvoyees: [],
+  savedPostIds: [],
+  hiddenPostIds: [],
 };
 
 const storageKey = "ifawa.app-state";
 
-function readInitialState() {
+function readInitialState(userId?: string) {
   if (typeof window === "undefined") return initial;
-  const raw = window.localStorage.getItem(storageKey);
-  if (!raw) return initial;
   try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return initial;
     const persisted = JSON.parse(raw) as Partial<AppState>;
+    if (!userId || persisted.currentUserId !== userId) return initial;
     return {
       ...initial,
       ...persisted,
@@ -68,14 +77,18 @@ function readInitialState() {
       readNotificationIds: persisted.readNotificationIds ?? initial.readNotificationIds,
     };
   } catch {
-    window.localStorage.removeItem(storageKey);
+    // Storage can be unavailable in private browsing.
     return initial;
   }
 }
 
 function persist(next: AppState) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(storageKey, JSON.stringify(next));
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(next));
+  } catch {
+    /* Remote writes must not depend on local storage capacity. */
+  }
 }
 
 let state: AppState = initial;
@@ -105,11 +118,33 @@ export function useApp(): AppState {
 
 export const actions = {
   hydratePersistedState() {
-    state = readInitialState();
-    emit();
+    // Restore only after the authenticated account is known.
   },
   setCurrentUserId(userId?: string) {
-    setState({ currentUserId: userId });
+    if (state.currentUserId !== userId || !userId) {
+      setState({
+        ...readInitialState(userId),
+        profil: { ...initial.profil },
+        profileReady: false,
+        currentUserId: userId,
+      });
+    }
+  },
+  isCurrentUser(userId?: string) {
+    return state.currentUserId === userId;
+  },
+  toggleSavedPost(id: string) {
+    setState((s) => ({
+      savedPostIds: s.savedPostIds.includes(id)
+        ? s.savedPostIds.filter((value) => value !== id)
+        : [...s.savedPostIds, id],
+    }));
+  },
+  hidePost(id: string) {
+    setState((s) => ({ hiddenPostIds: [...new Set([...s.hiddenPostIds, id])] }));
+  },
+  restoreHiddenPosts() {
+    setState({ hiddenPostIds: [] });
   },
   remplacerPosts(posts: Post[], reactions?: Record<string, ReactionKind>) {
     setState((s) => ({
@@ -266,9 +301,15 @@ export const actions = {
     const cleanPatch = Object.fromEntries(
       Object.entries(patch).filter(([, value]) => value !== undefined),
     ) as Partial<Profil>;
-    setState((s) => ({ profil: { ...s.profil, ...cleanPatch }, onboarded: true }));
+    setState((s) => ({
+      profil: { ...s.profil, ...cleanPatch },
+      onboarded: true,
+      profileReady: true,
+    }));
   },
   lireNotification(id: string) {
+    if (state.currentUserId)
+      void persistReceipt(state.currentUserId, "notification", id).catch(() => {});
     setState((s) => ({
       readNotificationIds: s.readNotificationIds.includes(id)
         ? s.readNotificationIds
@@ -282,6 +323,9 @@ export const actions = {
     }
   },
   toutLireNotifications() {
+    if (state.currentUserId)
+      for (const item of state.notifications.filter((item) => item.type !== "message"))
+        void persistReceipt(state.currentUserId, "notification", item.id).catch(() => {});
     setState((s) => ({
       readNotificationIds: [
         ...new Set([...s.readNotificationIds, ...s.notifications.map((item) => item.id)]),

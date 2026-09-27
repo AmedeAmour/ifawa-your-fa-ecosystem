@@ -1,3 +1,6 @@
+-- CONTRAT HISTORIQUE : ne pas déployer ce fichier seul.
+-- Ses anciennes politiques permissives sont décrites dans l'audit.
+-- Voir ifawa2-hardening.sql et ../MISE-EN-OEUVRE-IFAWA.md avant toute application.
 -- Contrat Supabase attendu par l'application Ifawa.
 -- A appliquer uniquement sur le projet Supabase correct: Ifawa2.
 

@@ -16,7 +16,8 @@ import {
   LogIn,
   LogOut,
 } from "lucide-react";
-import { Logo, Monogram, Panel, Kicker } from "./primitives";
+import { Logo, Panel, Kicker } from "./primitives";
+import { AccountMenu } from "./AccountMenu";
 import { actions, useApp } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { getCurrentUser, loadCurrentProfile, onAuthUserChange, signOut } from "@/lib/ifawa-auth";
@@ -46,37 +47,53 @@ const sideExtra = [
   { to: "/carnet", label: "Carnet de parcours", icon: RouteIcon },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/parametres", label: "Confidentialité", icon: Settings },
-  { to: "/admin", label: "Administration", icon: Shield },
 ] as const;
 
-export function Shell({ children, right }: { children: ReactNode; right?: ReactNode }) {
+export function Shell({
+  children,
+  right,
+  wide = false,
+}: {
+  children: ReactNode;
+  right?: ReactNode;
+  wide?: boolean;
+}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
-  const { currentUserId, profil, notifications } = useApp();
+  const { currentUserId, profil, notifications, profileReady } = useApp();
+  const [profileError, setProfileError] = useState(false);
+  const [profileRetry, setProfileRetry] = useState(0);
   const [connected, setConnected] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [networkBadge, setNetworkBadge] = useState(0);
   const [messageBadge, setMessageBadge] = useState(0);
   const initialAuthResolved = useRef(false);
-  const nonLues = authChecked ? notifications.filter((n) => n.nonLue).length : 0;
+  const nonLues = authChecked
+    ? notifications.filter((n) => n.nonLue && n.type !== "message").length
+    : 0;
 
   useEffect(() => {
     actions.hydratePersistedState();
     let alive = true;
 
-    async function warmAuthenticatedData() {
-      const [profile, notifications, _feed, network, conversations] = await Promise.all([
-        loadCurrentProfile().catch(() => null),
+    async function warmAuthenticatedData(userId: string) {
+      setProfileError(false);
+      // Profile readiness must not wait for network or badge requests.
+      void loadCurrentProfile(userId)
+        .then((profile) => {
+          if (!alive || !actions.isCurrentUser(userId)) return;
+          if (profile) actions.majProfil(profile);
+          else setProfileError(true);
+        })
+        .catch(() => {
+          if (alive && actions.isCurrentUser(userId)) setProfileError(true);
+        });
+      const [notifications, network, conversations] = await Promise.all([
         loadNotificationsFromSupabase().catch(() => null),
-        loadFeedFromSupabase().catch(() => null),
         loadNetworkFromSupabase().catch(() => null),
         loadConversationsFromSupabase().catch(() => null),
-        fetchServiceCatalog().catch(() => null),
-        loadMyServiceRequests().catch(() => null),
-        loadMyContributions().catch(() => null),
       ]);
-      if (!alive) return;
-      if (profile) actions.majProfil(profile);
+      if (!alive || !actions.isCurrentUser(userId)) return;
       if (notifications) actions.remplacerNotifications(notifications);
       if (network) setNetworkBadge(network.received.length);
       if (conversations) {
@@ -95,18 +112,27 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       }
     }
 
-    getCurrentUser().then((user) => {
-      if (!alive) return;
-      setConnected(Boolean(user));
-      actions.setCurrentUserId(user?.id);
-      initialAuthResolved.current = true;
-      setAuthChecked(true);
-      if (!user) navigate({ to: "/connexion" });
-      if (alive && user) {
-        hydrateCachedBadges(user.id);
-        void warmAuthenticatedData();
-      }
-    });
+    getCurrentUser()
+      .then((user) => {
+        if (!alive) return;
+        setConnected(Boolean(user));
+        actions.setCurrentUserId(user?.id);
+        initialAuthResolved.current = true;
+        setAuthChecked(true);
+        if (!user) navigate({ to: "/connexion" });
+        if (alive && user) {
+          hydrateCachedBadges(user.id);
+          window.setTimeout(() => {
+            if (alive) void warmAuthenticatedData(user.id);
+          }, 0);
+        }
+      })
+      .catch(() => {
+        if (!alive) return;
+        setAuthChecked(true);
+        setConnected(false);
+        void navigate({ to: "/connexion" });
+      });
     const unsubscribe = onAuthUserChange((user) => {
       if (!initialAuthResolved.current && !user) return;
       initialAuthResolved.current = true;
@@ -116,7 +142,9 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       if (!user) navigate({ to: "/connexion" });
       if (user) {
         hydrateCachedBadges(user.id);
-        void warmAuthenticatedData();
+        window.setTimeout(() => {
+          if (alive) void warmAuthenticatedData(user.id);
+        }, 0);
       } else {
         setNetworkBadge(0);
         setMessageBadge(0);
@@ -126,7 +154,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
       alive = false;
       unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, profileRetry]);
 
   useEffect(() => {
     if (!authChecked || !connected) return;
@@ -145,7 +173,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
         loadNetworkFromSupabase().catch(() => null),
         loadConversationsFromSupabase().catch(() => null),
       ]);
-      if (!alive) return;
+      if (!alive || !actions.isCurrentUser(currentUserId)) return;
       if (nextNotifications) actions.remplacerNotifications(nextNotifications);
       if (nextNetwork) setNetworkBadge(nextNetwork.received.length);
       if (nextConversations) {
@@ -154,7 +182,8 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
     }
 
     function applyBadgeHint(event: Event) {
-      const detail = (event as CustomEvent<{ messages?: number; network?: number }>).detail;
+      const detail = (event as CustomEvent<{ messages?: number | undefined; network?: number }>)
+        .detail;
       if (typeof detail?.messages === "number") setMessageBadge(detail.messages);
       if (typeof detail?.network === "number") setNetworkBadge(detail.network);
     }
@@ -178,7 +207,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
   return (
     <div className="min-h-screen bg-ivory text-umber">
       <header className="sticky top-0 z-30 border-b border-umber/10 bg-ivory/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4">
+        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-2 px-4 sm:gap-4">
           <Link to="/accueil" className="flex items-center">
             <Logo />
           </Link>
@@ -192,13 +221,15 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
           <div className="flex items-center gap-1">
             <Link
               to="/recherche"
-              className="grid size-9 place-items-center text-umber-soft sm:hidden"
+              aria-label="Rechercher"
+              className="grid size-11 place-items-center text-umber-soft sm:hidden"
             >
               <Search className="size-4.5" />
             </Link>
             <Link
               to="/notifications"
-              className="relative grid size-9 place-items-center text-umber-soft hover:text-clay"
+              aria-label="Notifications"
+              className="relative grid size-11 place-items-center text-umber-soft hover:text-clay"
             >
               <Bell className="size-4.5" />
               {nonLues > 0 && (
@@ -207,29 +238,17 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
                 </span>
               )}
             </Link>
-            {connected ? (
-              <>
-                <Link to="/profil" className="ml-1">
-                  <Monogram
-                    name={profil.pseudo}
-                    imageUrl={profil.avatarUrl}
-                    size={40}
-                    tone="umber"
-                  />
-                </Link>
-                <button
-                  type="button"
-                  onClick={disconnect}
-                  className="grid size-9 place-items-center text-umber-soft transition-colors hover:text-clay"
-                  aria-label="Se déconnecter"
-                >
-                  <LogOut className="size-4.5" />
-                </button>
-              </>
+            {connected && profileReady ? (
+              <AccountMenu profil={profil} onSignOut={disconnect} />
+            ) : connected ? (
+              <span
+                aria-label="Chargement du profil"
+                className="size-10 animate-pulse rounded-full bg-umber/10"
+              />
             ) : (
               <Link
                 to="/connexion"
-                className="inline-flex items-center gap-2 px-2.5 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-umber-soft transition-colors hover:text-clay sm:px-3"
+                className="inline-flex items-center gap-2 px-2.5 py-2 font-medium text-[13px] text-umber-soft transition-colors hover:text-clay sm:px-3"
               >
                 <LogIn className="size-4" />
                 <span className="hidden sm:inline">Connexion</span>
@@ -239,21 +258,36 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
         </div>
       </header>
 
-      {!authChecked ? (
-        <main className="mx-auto grid min-h-[calc(100vh-3.5rem)] max-w-2xl place-items-center px-5 text-center">
+      {!authChecked || (connected && !profileReady) ? (
+        <main className="mx-auto grid min-h-[calc(100dvh-3.5rem)] max-w-2xl place-items-center px-5 text-center">
           <div>
             <p className="label-mono mb-3 text-clay">Ouverture</p>
-            <h1 className="font-display text-[34px] uppercase leading-none">Chargement</h1>
+            <h1 className="font-display text-[28px] font-semibold leading-tight tracking-tight">
+              {profileError ? "Votre profil est indisponible" : "Chargement"}
+            </h1>
             <p className="mt-3 text-[14px] leading-relaxed text-umber-soft">
-              Préparation de votre espace Ifawa.
+              {profileError
+                ? "Vérifiez votre connexion, puis réessayez."
+                : "Préparation de votre espace Ifawa."}
             </p>
+            {profileError && (
+              <button
+                type="button"
+                className="mt-4 min-h-11 rounded-full bg-forest px-5 text-ivory"
+                onClick={() => setProfileRetry((value) => value + 1)}
+              >
+                Réessayer
+              </button>
+            )}
           </div>
         </main>
       ) : !connected ? (
-        <main className="mx-auto grid min-h-[calc(100vh-3.5rem)] max-w-2xl place-items-center px-5 text-center">
+        <main className="mx-auto grid min-h-[calc(100dvh-3.5rem)] max-w-2xl place-items-center px-5 text-center">
           <div>
             <p className="label-mono mb-3 text-clay">Connexion requise</p>
-            <h1 className="font-display text-[34px] uppercase leading-none">Accès réservé</h1>
+            <h1 className="font-display text-[28px] font-semibold leading-tight tracking-tight">
+              Accès réservé
+            </h1>
             <p className="mt-3 text-[14px] leading-relaxed text-umber-soft">
               Connectez-vous pour accéder à votre espace Ifawa.
             </p>
@@ -275,7 +309,7 @@ export function Shell({ children, right }: { children: ReactNode; right?: ReactN
 
           <main className="min-w-0 flex-1">{children}</main>
 
-          <aside className="hidden w-72 shrink-0 xl:block">
+          <aside className={cn("hidden w-72 shrink-0", !wide && "xl:block")}>
             <div className="sticky top-20 space-y-4">{right ?? <DefaultRail />}</div>
           </aside>
         </div>
@@ -310,7 +344,7 @@ function SideLink({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       to={to as any}
       className={cn(
-        "flex items-center gap-3 px-3 py-2.5 text-[13px] font-medium transition-colors",
+        "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors",
         active ? "bg-umber text-ivory" : "text-umber-soft hover:bg-ivory-deep hover:text-umber",
       )}
     >
@@ -322,18 +356,26 @@ function SideLink({
 
 function DefaultRail() {
   const { profil, notifications } = useApp();
-  const unread = notifications.filter((notification) => notification.nonLue).length;
+  const unread = notifications.filter(
+    (notification) => notification.nonLue && notification.type !== "message",
+  ).length;
   return (
     <>
       <Panel tone="forest">
         <Kicker className="text-brass">Votre signe</Kicker>
-        <p className="mt-2 font-display text-[24px] uppercase leading-none">{profil.signe}</p>
+        <p className="mt-2 font-display text-[24px] font-semibold leading-tight tracking-tight">
+          {profil.initie ? profil.signe || "Signe à renseigner" : "Découvrir le Fa"}
+        </p>
         <p className="mt-2 text-[13px] leading-relaxed text-ivory/75">
-          Initié depuis {profil.annee} · {profil.satisfaction}
+          {profil.initie
+            ? profil.annee
+              ? `Initié depuis ${profil.annee}`
+              : "Votre parcours personnel"
+            : "Apprenez à votre rythme et retrouvez la communauté."}
         </p>
         <Link
           to="/fa"
-          className="mt-4 inline-block font-mono text-[10px] uppercase tracking-[0.18em] text-brass hover:text-ivory"
+          className="mt-4 inline-block font-medium text-[13px] text-brass hover:text-ivory"
         >
           Ouvrir les signes →
         </Link>
@@ -345,10 +387,7 @@ function DefaultRail() {
           Retrouvez les membres disponibles, acceptez les invitations et ouvrez une conversation
           depuis votre réseau.
         </p>
-        <Link
-          to="/reseau"
-          className="mt-4 inline-block font-mono text-[10px] uppercase tracking-[0.18em] text-clay"
-        >
+        <Link to="/reseau" className="mt-4 inline-block font-medium text-[13px] text-clay">
           Voir le réseau →
         </Link>
       </Panel>
@@ -362,7 +401,11 @@ function DefaultRail() {
             </Link>
           </li>
           <li>
-            <Link to="/services/consultation" className="hover:text-clay">
+            <Link
+              to="/services/$slug"
+              params={{ slug: "consultation" }}
+              className="hover:text-clay"
+            >
               Consultation Fa →
             </Link>
           </li>
@@ -387,9 +430,18 @@ function DefaultRail() {
   );
 }
 
-function BottomNav({ pathname, badges = {} }: { pathname: string; badges?: Record<string, number> }) {
+function BottomNav({
+  pathname,
+  badges = {},
+}: {
+  pathname: string;
+  badges?: Record<string, number>;
+}) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-umber/10 bg-ivory/98 backdrop-blur lg:hidden">
+    <nav
+      aria-label="Navigation principale"
+      className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-umber/10 bg-ivory/98 backdrop-blur lg:hidden"
+    >
       <div className="mx-auto grid max-w-md grid-cols-5">
         {mainNav.map((n) => {
           const active = pathname.startsWith(n.to);
@@ -401,28 +453,28 @@ function BottomNav({ pathname, badges = {} }: { pathname: string; badges?: Recor
               to={n.to as any}
               className={cn(
                 "flex flex-col items-center justify-center gap-1 py-2.5 transition-colors",
-                active ? "text-clay" : "text-umber-soft",
+                active ? "text-clay bg-clay/5" : "text-umber-soft",
               )}
             >
               <span className="relative">
                 <Icon className="size-5" />
                 {(badges[n.to] ?? 0) > 0 && (
                   <span className="absolute -right-2.5 -top-2 grid min-h-4 min-w-4 place-items-center rounded-full bg-clay px-1 font-mono text-[8px] leading-none text-ivory">
-                    {badges[n.to] > 9 ? "9+" : badges[n.to]}
+                    {(badges[n.to] ?? 0) > 9 ? "9+" : badges[n.to]}
                   </span>
                 )}
               </span>
-              <span className="font-mono text-[9px] uppercase tracking-[0.1em]">{n.label}</span>
+              <span className="font-medium text-[13px]">{n.label}</span>
             </Link>
           );
         })}
       </div>
       <Link
         to="/services"
-        className="absolute -top-12 right-4 grid size-11 place-items-center rounded-full bg-clay text-ivory shadow-lg"
-        aria-label="Services Ifawa"
+        aria-label="Découvrir les services Ifawa"
+        className="absolute -top-14 right-4 flex min-h-11 items-center gap-2 rounded-full bg-clay px-4 text-sm font-semibold text-ivory shadow-lg ring-1 ring-ivory/30 transition-colors hover:bg-umber"
       >
-        <Briefcase className="size-5" />
+        <Briefcase className="size-4" aria-hidden="true" /> Services
       </Link>
     </nav>
   );

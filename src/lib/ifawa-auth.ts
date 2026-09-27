@@ -1,6 +1,8 @@
 import type { User } from "@supabase/supabase-js";
-import type { Profil } from "./store";
+import { actions, type Profil } from "./store";
+import { clearPrivateCaches } from "./ifawa-cache";
 import { supabase } from "./supabase";
+import { photoToWebP } from "./image-webp";
 
 type UserPath = "initiated" | "not_initiated";
 
@@ -8,7 +10,7 @@ export type OnboardingDraft = Partial<Profil> & {
   pseudo: string;
   initie: boolean;
   username?: string;
-  avatarFile?: File;
+  avatarFile?: File | undefined;
 };
 
 export type AuthResult =
@@ -67,7 +69,6 @@ function takePendingDraft(email: string): OnboardingDraft | null {
   try {
     const parsed = JSON.parse(raw) as { email?: string; draft?: OnboardingDraft };
     if (parsed.email?.toLowerCase() !== email.toLowerCase() || !parsed.draft) return null;
-    window.localStorage.removeItem(pendingDraftKey);
     return parsed.draft;
   } catch {
     window.localStorage.removeItem(pendingDraftKey);
@@ -77,12 +78,16 @@ function takePendingDraft(email: string): OnboardingDraft | null {
 
 function metadataDraft(user: User): OnboardingDraft | null {
   const metadata = user.user_metadata ?? {};
-  const username = typeof metadata.username === "string" ? metadata.username : "";
+  const username = typeof metadata["username"] === "string" ? metadata["username"] : "";
   if (!username) return null;
   return {
-    pseudo: `@${username.replace(/^@/, "")}`,
-    initie: metadata.path === "initiated",
-    miseEnRelation: metadata.relation_enabled === true,
+    pseudo:
+      typeof metadata["display_name"] === "string"
+        ? metadata["display_name"]
+        : `@${username.replace(/^@/, "")}`,
+    username,
+    initie: metadata["path"] === "initiated",
+    miseEnRelation: metadata["relation_enabled"] === true,
   };
 }
 
@@ -101,17 +106,17 @@ export async function createOrUpdateProfile(user: User, draft: OnboardingDraft) 
   const path = pathFromDraft(draft);
   const { data: existingProfile } = await supabase
     .from("profiles")
-    .select("avatar_url, relation_enabled")
+    .select("avatar_url, cover_url, username, relation_enabled")
     .eq("id", user.id)
     .maybeSingle();
 
   const { error: profileError } = await supabase.from("profiles").upsert(
     {
       id: user.id,
-      username,
+      username: existingProfile?.username ?? username,
       display_name: displayName,
       avatar_url: draft.avatarUrl ?? existingProfile?.avatar_url ?? null,
-      cover_url: null,
+      cover_url: existingProfile?.cover_url ?? null,
       path,
       relation_enabled: draft.miseEnRelation ?? existingProfile?.relation_enabled ?? false,
       is_profile_complete: true,
@@ -121,24 +126,28 @@ export async function createOrUpdateProfile(user: User, draft: OnboardingDraft) 
 
   if (profileError) throw profileError;
 
-  if (draft.initie) {
+  if (
+    (draft.initie &&
+      (draft.signe !== undefined || draft.annee !== undefined || draft.temoignage !== undefined)) ||
+    Boolean(draft.temoignage?.trim())
+  ) {
     const slug = signSlug(draft.signe);
-    const { data: sign } = await supabase
-      .from("fa_signs")
-      .select("id")
-      .or(`slug.eq.${slug},name.eq.${draft.signe ?? ""}`)
-      .maybeSingle();
+    const { data: sign, error: signError } = slug
+      ? await supabase.from("fa_signs").select("id").eq("slug", slug).maybeSingle()
+      : { data: null, error: null };
+    if (signError) throw signError;
 
     const { error: faError } = await supabase.from("profile_fa_details").upsert(
       {
         profile_id: user.id,
         fa_sign_id: sign?.id ?? null,
+        custom_sign_name: !sign && draft.initie ? draft.signe?.trim() || null : null,
         initiation_year: draft.annee ? Number.parseInt(draft.annee, 10) || null : null,
         satisfaction_score: satisfactionScore(draft.satisfaction),
         experience_text: draft.temoignage ?? null,
-        sign_visibility: "same_sign",
-        initiation_year_visibility: "connections",
-        experience_visibility: "connections",
+        sign_visibility: draft.signVisibility ?? "private",
+        initiation_year_visibility: "private",
+        experience_visibility: "private",
       },
       { onConflict: "profile_id" },
     );
@@ -197,31 +206,50 @@ export async function signInWithEmail(email: string, password: string) {
   const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
   if (error) throw error;
   if (data.user) {
-    const draft = takePendingDraft(cleanEmail) ?? metadataDraft(data.user);
-    if (draft) await createOrUpdateProfile(data.user, draft);
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (profileError) throw profileError;
+    // Signing in must never replay onboarding over an existing profile.
+    if (!profile) {
+      const draft = takePendingDraft(cleanEmail) ?? metadataDraft(data.user);
+      if (draft) await createOrUpdateProfile(data.user, draft);
+    }
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(pendingDraftKey);
+      } catch {
+        /* Storage is optional. */
+      }
+    }
   }
   return data;
 }
 
-export async function loadCurrentProfile(): Promise<Partial<Profil> | null> {
+export async function loadCurrentProfile(knownUserId?: string): Promise<Partial<Profil> | null> {
   if (!supabase) return null;
-  const { data: userData } = await supabase.auth.getUser();
-  const user = userData.user;
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("username, display_name, avatar_url, cover_url, path, relation_enabled")
-    .eq("id", user.id)
-    .maybeSingle();
-
+  const userId = knownUserId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!userId) return null;
+  const [{ data: profile, error: profileError }, { data: details }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("username, display_name, avatar_url, cover_url, path, relation_enabled")
+      .eq("id", userId)
+      .abortSignal(AbortSignal.timeout(15000))
+      .maybeSingle(),
+    supabase
+      .from("profile_fa_details")
+      .select(
+        "initiation_year, satisfaction_score, experience_text, sign_visibility, custom_sign_name, fa_signs(name)",
+      )
+      .eq("profile_id", userId)
+      .abortSignal(AbortSignal.timeout(15000))
+      .maybeSingle(),
+  ]);
+  if (profileError) throw profileError;
   if (!profile) return null;
-
-  const { data: details } = await supabase
-    .from("profile_fa_details")
-    .select("initiation_year, satisfaction_score, experience_text, fa_signs(name)")
-    .eq("profile_id", user.id)
-    .maybeSingle();
 
   const satisfactionByScore: Record<number, string> = {
     1: "Très insatisfait",
@@ -235,25 +263,27 @@ export async function loadCurrentProfile(): Promise<Partial<Profil> | null> {
 
   return {
     pseudo: profile.display_name || `@${profile.username}`,
-    avatarUrl: profile.avatar_url || undefined,
+    avatarUrl: profile.avatar_url || "",
+    coverUrl: profile.cover_url || "",
     initie: profile.path === "initiated",
     miseEnRelation: profile.relation_enabled,
-    signe: sign?.name ?? undefined,
-    annee: details?.initiation_year ? String(details.initiation_year) : undefined,
+    signe: sign?.name ?? details?.custom_sign_name ?? "",
+    annee: details?.initiation_year ? String(details.initiation_year) : "",
     satisfaction: details?.satisfaction_score
-      ? satisfactionByScore[details.satisfaction_score]
-      : undefined,
-    temoignage: details?.experience_text ?? undefined,
+      ? (satisfactionByScore[details.satisfaction_score] ?? "")
+      : "",
+    temoignage: details?.experience_text ?? "",
+    signVisibility: details?.sign_visibility ?? "private",
   };
 }
 
 export async function updateProfileSettings(
   profile: Pick<Profil, "pseudo" | "miseEnRelation" | "avatarUrl">,
 ) {
-  if (!supabase) return;
+  if (!supabase) throw new Error("La connexion n'est pas disponible.");
   const { data: userData } = await supabase.auth.getUser();
   const user = userData.user;
-  if (!user) return;
+  if (!user) throw new Error("Reconnectez-vous pour enregistrer votre profil.");
 
   const { data: existingProfile, error: existingError } = await supabase
     .from("profiles")
@@ -311,19 +341,15 @@ export async function updateProfileSettings(
 export const updateProfileMedia = updateProfileSettings;
 
 export async function uploadProfileAvatar(file: File) {
-  if (!supabase) return readFileAsDataUrl(file);
+  if (!supabase) throw new Error("Connexion indisponible.");
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id;
-  if (!userId) return readFileAsDataUrl(file);
+  if (!userId) throw new Error("Reconnectez-vous pour envoyer une photo.");
 
-  const extension =
-    file.name
-      .split(".")
-      .pop()
-      ?.toLowerCase()
-      .replace(/[^a-z0-9]/g, "") || "jpg";
-  const path = `${userId}/avatar-${Date.now()}.${extension}`;
-  const { error } = await supabase.storage.from(avatarBucket).upload(path, file, {
+  const optimized = await photoToWebP(file, 1600);
+  const path = `${userId}/avatar-${crypto.randomUUID()}.webp`;
+  const { error } = await supabase.storage.from(avatarBucket).upload(path, optimized, {
+    contentType: "image/webp",
     cacheControl: "3600",
     upsert: true,
   });
@@ -345,7 +371,66 @@ function readFileAsDataUrl(file: File) {
 
 export async function signOut() {
   if (!supabase) return;
-  await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+  clearPrivateCaches();
+  actions.setCurrentUserId(undefined);
+}
+
+export async function updateFaDetails(
+  profile: Pick<
+    Profil,
+    "initie" | "signe" | "annee" | "satisfaction" | "temoignage" | "signVisibility"
+  >,
+) {
+  if (!supabase) throw new Error("La connexion n'est pas disponible.");
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Reconnectez-vous pour enregistrer votre parcours.");
+  let signId: string | null = null;
+  if (profile.signe) {
+    const { data, error } = await supabase
+      .from("fa_signs")
+      .select("id")
+      .eq("slug", signSlug(profile.signe))
+      .maybeSingle();
+    if (error) throw error;
+    signId = data?.id ?? null;
+  }
+  const year = profile.annee ? Number(profile.annee) : null;
+  if (year !== null && (!Number.isInteger(year) || year < 1900 || year > new Date().getFullYear()))
+    throw new Error("Indiquez une année valide.");
+  const { error } = await supabase.from("profile_fa_details").upsert(
+    {
+      profile_id: user.id,
+      fa_sign_id: profile.initie ? signId : null,
+      custom_sign_name: profile.initie && !signId ? profile.signe.trim() || null : null,
+      initiation_year: profile.initie ? year : null,
+      satisfaction_score: profile.initie ? satisfactionScore(profile.satisfaction) : null,
+      experience_text: profile.temoignage.trim() || null,
+      sign_visibility: profile.signVisibility,
+    },
+    { onConflict: "profile_id" },
+  );
+  if (error) throw error;
+  const { error: pathError } = await supabase
+    .from("profiles")
+    .update({ path: profile.initie ? "initiated" : "not_initiated" })
+    .eq("id", user.id);
+  if (pathError) throw pathError;
+}
+
+export async function requestPasswordReset(email: string) {
+  if (!supabase) throw new Error("La connexion n'est pas disponible.");
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: `${window.location.origin}/connexion?recovery=1`,
+  });
+  if (error) throw error;
+}
+
+export async function changeRecoveredPassword(password: string) {
+  if (!supabase) throw new Error("La connexion n'est pas disponible.");
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
 }
 
 export async function getCurrentUser() {

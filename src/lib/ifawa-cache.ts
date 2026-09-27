@@ -6,17 +6,36 @@ function cacheKey(userId: string | undefined, name: string) {
 
 export function readCache<T>(userId: string | undefined, name: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
-  const raw = window.localStorage.getItem(cacheKey(userId, name));
-  if (!raw) return fallback;
   try {
+    const raw = window.localStorage.getItem(cacheKey(userId, name));
+    if (!raw) return fallback;
     return JSON.parse(raw) as T;
   } catch {
-    window.localStorage.removeItem(cacheKey(userId, name));
     return fallback;
   }
 }
 
 export function writeCache<T>(userId: string | undefined, name: string, value: T) {
   if (typeof window === "undefined" || !userId) return;
-  window.localStorage.setItem(cacheKey(userId, name), JSON.stringify(value));
+  try {
+    window.localStorage.setItem(cacheKey(userId, name), JSON.stringify(value));
+  } catch {
+    /* Storage may be full or disabled. Remote data remains authoritative. */
+  }
+}
+
+export function clearPrivateCaches() {
+  if (typeof window === "undefined") return;
+  try {
+    Object.keys(window.localStorage)
+      .filter(
+        (key) =>
+          key.startsWith("ifawa.") &&
+          !key.includes(".global.") &&
+          !key.startsWith("ifawa.read-receipts."),
+      )
+      .forEach((key) => window.localStorage.removeItem(key));
+  } catch {
+    /* A disabled browser store must not prevent signing out. */
+  }
 }

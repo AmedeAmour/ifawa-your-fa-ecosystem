@@ -9,16 +9,10 @@
   "theme_color": "#201B14",
   "icons": [
     {
-      "src": "/favicon.png",
-      "sizes": "192x192",
+      "src": "/ifawa-symbol.png",
+      "sizes": "700x700",
       "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/favicon.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

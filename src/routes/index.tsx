@@ -1,13 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Logo } from "@/components/ifawa/primitives";
-import cover from "@/assets/cover.jpg";
-
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
-};
-
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
@@ -29,65 +22,34 @@ export const Route = createFileRoute("/")({
 });
 
 function Bienvenue() {
-  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [installed, setInstalled] = useState(false);
-  const [installMessage, setInstallMessage] = useState("");
-
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
-
-    const onPrompt = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event as BeforeInstallPromptEvent);
-    };
-    const onInstalled = () => {
-      setInstalled(true);
-      setInstallPrompt(null);
-    };
-
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onPrompt);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
   }, []);
 
-  async function installApp() {
-    if (!installPrompt) {
-      setInstallMessage("Ouvrez Ifawa sur votre téléphone pour lancer l'installation.");
-      return;
-    }
-    await installPrompt.prompt();
-    const choice = await installPrompt.userChoice;
-    if (choice.outcome === "accepted") {
-      setInstalled(true);
-      setInstallMessage("Ifawa est installée.");
-    } else {
-      setInstallMessage("");
-    }
-    setInstallPrompt(null);
-  }
-
   return (
-    <div className="min-h-screen bg-ivory text-umber">
+    <div className="flex min-h-dvh flex-col bg-ivory text-umber">
       <header className="border-b border-umber/10">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-5">
           <Logo />
-          <span className="label-mono text-umber-soft">Plateforme</span>
+          <Link
+            to="/connexion"
+            className="inline-flex min-h-11 items-center rounded-full border border-umber/15 px-4 text-sm font-semibold"
+          >
+            Se connecter
+          </Link>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-5 pb-16">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-5 pb-16">
         <section className="pt-12 sm:pt-16">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
             <div className="animate-rise">
               <p className="label-mono mb-4 text-clay">Bienvenue sur Ifawa</p>
-              <h1 className="font-display text-[58px] uppercase leading-[0.86] tracking-tight sm:text-[84px]">
-                <span className="block skew-x-[-4deg]">Découvre</span>
-                <span className="block skew-x-[-4deg] text-clay">ton signe</span>
+              <h1 className="font-display text-[42px] font-semibold leading-[1.08] tracking-tight sm:text-[64px]">
+                <span className="block">Le Fa,</span>
+                <span className="block skew-x-[-4deg] text-clay">ensemble.</span>
               </h1>
             </div>
             <p className="max-w-[34ch] text-pretty text-[15px] leading-relaxed text-umber-soft sm:mb-3">
@@ -117,56 +79,10 @@ function Bienvenue() {
           <div className="mt-5 flex justify-center">
             <Link
               to="/connexion"
-              className="font-mono text-[10px] uppercase tracking-[0.18em] text-clay transition-colors hover:text-umber"
+              className="font-medium text-[13px] text-clay transition-colors hover:text-umber"
             >
               J'ai déjà un compte →
             </Link>
-          </div>
-        </section>
-
-        <section className="mt-14 border-t border-umber/10 pt-8">
-          <div className="grid gap-6 sm:grid-cols-[1.2fr_1fr] sm:items-center">
-            <img
-              src={cover}
-              alt="Bois gravé de lignes fines, motif de plateau de divination"
-              width={1600}
-              height={600}
-              className="aspect-[8/3] w-full object-cover"
-            />
-            <div>
-              <p className="label-mono mb-3 text-brass">Ce que vous trouverez</p>
-              <ul className="space-y-2.5 text-[14px] leading-relaxed text-umber-soft">
-                <li>Un fil d'actualité et une communauté de membres.</li>
-                <li>Une bibliothèque des seize signes-mères.</li>
-                <li>Des services : consultation, initiation, étude, accompagnement.</li>
-                <li>Un dossier Fa personnel et un carnet de parcours.</li>
-              </ul>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-8 bg-umber p-5 text-ivory">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="label-mono mb-2 text-brass">Application mobile</p>
-              <h2 className="font-display text-[28px] uppercase leading-none">Installer Ifawa</h2>
-              <p className="mt-2 max-w-[46ch] text-[13px] leading-relaxed text-ivory/70">
-                Installez Ifawa sur votre téléphone pour retrouver votre espace en un geste.
-              </p>
-              {installMessage ? (
-                <p className="mt-3 max-w-[42ch] text-[12px] leading-relaxed text-ivory/60">
-                  {installMessage}
-                </p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={installApp}
-              disabled={installed}
-              className="bg-clay px-4 py-3 font-mono text-[10px] uppercase tracking-[0.18em] text-ivory transition-colors hover:bg-clay/90 disabled:bg-ivory/10 disabled:text-ivory/45"
-            >
-              {installed ? "Installée" : "Installer"}
-            </button>
           </div>
         </section>
       </main>
@@ -200,16 +116,18 @@ function Carte({
     <Link
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       to={to as any}
-      className={`group relative animate-skew-in overflow-hidden p-6 text-left text-ivory transition-transform hover:-translate-y-0.5 ${
+      className={`group relative animate-skew-in overflow-hidden rounded-2xl p-6 text-left text-ivory transition-transform hover:-translate-y-0.5 ${
         tone === "forest" ? "bg-forest" : "bg-umber"
       }`}
     >
       <span className="absolute inset-y-0 w-24 -skew-x-12 animate-sheen bg-ivory/10" />
       <div className="relative">
         <p className="label-mono mb-3 text-brass">{parcours}</p>
-        <h2 className="mb-2 font-display text-[30px] uppercase leading-tight">{titre}</h2>
+        <h2 className="mb-2 font-display text-[28px] font-semibold leading-tight tracking-tight">
+          {titre}
+        </h2>
         <p className="text-[14px] leading-relaxed text-ivory/75">{texte}</p>
-        <span className="mt-5 inline-block font-mono text-[10px] uppercase tracking-[0.2em] text-brass transition-colors group-hover:text-ivory">
+        <span className="mt-5 inline-block font-medium text-[13px] text-brass transition-colors group-hover:text-ivory">
           {cta} →
         </span>
       </div>
