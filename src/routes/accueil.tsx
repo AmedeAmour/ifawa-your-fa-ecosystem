@@ -1,6 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Image as ImageIcon, Compass, Bookmark } from "lucide-react";
+import {
+  Image as ImageIcon,
+  Compass,
+  Bookmark,
+  BookOpen,
+  CircleHelp,
+  MessageCircle,
+} from "lucide-react";
 import { Shell } from "@/components/ifawa/Shell";
 import { PostCard } from "@/components/ifawa/PostCard";
 import { Btn, Empty, Kicker, Monogram, Panel, SectionTitle } from "@/components/ifawa/primitives";
@@ -48,7 +55,29 @@ function Accueil() {
   const [publishing, setPublishing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const filtres = ["Tout", "Témoignages", "Questions", "Enregistrés"];
-  const types = ["Témoignage", "Question", "Contribution"] as const;
+  const types = [
+    {
+      value: "Témoignage",
+      label: "Témoignage",
+      icon: MessageCircle,
+      className: "border-clay/15 bg-clay/10 text-clay hover:bg-clay/15",
+      activeClass: "border-clay/35 bg-clay/15 ring-1 ring-clay/10",
+    },
+    {
+      value: "Question",
+      label: "Question",
+      icon: CircleHelp,
+      className: "border-forest/15 bg-forest/10 text-forest hover:bg-forest/15",
+      activeClass: "border-forest/35 bg-forest/15 ring-1 ring-forest/10",
+    },
+    {
+      value: "Contribution",
+      label: "Contribuer",
+      icon: BookOpen,
+      className: "border-brass/20 bg-brass/10 text-brass hover:bg-brass/15",
+      activeClass: "border-brass/40 bg-brass/15 ring-1 ring-brass/10",
+    },
+  ] as const;
 
   const refreshFeed = useCallback(async () => {
     try {
@@ -114,27 +143,34 @@ function Accueil() {
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 pt-3">
-          {types.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => {
-                setType(item);
-                setComposerOpen(true);
-              }}
-              className={cn(
-                "min-w-0 whitespace-nowrap rounded-full px-2 py-1 text-center text-[11px] font-medium leading-4 transition-colors",
-                item === "Témoignage"
-                  ? "bg-clay/10 text-clay hover:bg-clay/20"
-                  : item === "Question"
-                    ? "bg-forest/10 text-forest hover:bg-forest/20"
-                    : "bg-brass/15 text-brass hover:bg-brass/25",
-              )}
-            >
-              {item}
-            </button>
-          ))}
+        <div
+          className="grid grid-cols-3 gap-2 pt-3"
+          role="group"
+          aria-label="Choisir le type de publication"
+        >
+          {types.map((item) => {
+            const Icon = item.icon;
+            const isActive = composerOpen && type === item.value;
+            return (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => {
+                  setType(item.value);
+                  setComposerOpen(true);
+                }}
+                className={cn(
+                  "flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-xl border px-1.5 text-[10px] font-semibold leading-none whitespace-nowrap transition-colors sm:gap-1.5 sm:px-2 sm:text-[12px]",
+                  item.className,
+                  isActive && item.activeClass,
+                )}
+              >
+                <Icon className="size-3 shrink-0 sm:size-3.5" aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {(composerOpen || texte || imageUrl) && (
